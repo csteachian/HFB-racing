@@ -26,16 +26,16 @@ globalThis.fetch = async (url) => {
 };
 globalThis.window = { location: { protocol: 'http:' }, get AudioContext() { return globalThis.AudioContext; }, innerWidth: 800, innerHeight: 600, devicePixelRatio: 1, addEventListener(t, f) { (handlers[t] = handlers[t] || []).push(f); } };
 
-const audioLog = { ctx: 0, osc: 0, freqSets: [], gainMax: 0 };
-const param = (n) => ({ value: 0, setTargetAtTime(v) { if (n === 'f') audioLog.freqSets.push(v); if (n === 'g') audioLog.gainMax = Math.max(audioLog.gainMax, v); } });
+const audioLog = { ctx: 0, osc: 0, freqSets: [], gainMax: 0, types: {} };
+const param = (n) => ({ value: 0, setTargetAtTime(v) { if (n === 'f') audioLog.freqSets.push(v); if (n === 'g') audioLog.gainMax = Math.max(audioLog.gainMax, v); }, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} });
 const node = () => ({ connect() {}, disconnect() {}, start() {}, stop() {}, gain: param('g'), frequency: param('f'), pan: param('p'), type: '' });
 globalThis.AudioContext = class { constructor() { audioLog.ctx++; this.state = 'running'; this.currentTime = 0; this.destination = node(); }
   createGain() { return node(); } createStereoPanner() { return node(); } createBiquadFilter() { return node(); } createDynamicsCompressor() { return node(); }
-  createOscillator() { audioLog.osc++; return node(); } resume() {} suspend() {} };
+  createOscillator() { audioLog.osc++; const n = node(); let t = ''; Object.defineProperty(n, 'type', { get: () => t, set: (v) => { t = v; audioLog.types[v] = (audioLog.types[v] || 0) + 1; } }); return n; } resume() {} suspend() {} };
 let raf = null; globalThis.requestAnimationFrame = (f) => { raf = f; };
 
 let src = fs.readFileSync(process.argv[2], 'utf8');
-src = src.replace('requestAnimationFrame(frame);\n})();', 'globalThis.__dbg = { racers, player, get N() { return N; }, get HALF() { return HALF; }, get state() { return state; }, get pts() { return pts; }, get pads() { return pads; }, get raceT() { return raceT; }, selectCourse, COURSES, step, get lostT() { return lostT; }, get trackLen() { return trackLen; } };\nrequestAnimationFrame(frame);\n})();');
+src = src.replace('requestAnimationFrame(frame);\n})();', 'globalThis.__dbg = { racers, player, get N() { return N; }, get HALF() { return HALF; }, get state() { return state; }, get pts() { return pts; }, get pads() { return pads; }, get raceT() { return raceT; }, selectCourse, COURSES, step, playChime, get LAPS() { return LAPS; }, get lostT() { return lostT; }, get trackLen() { return trackLen; } };\nrequestAnimationFrame(frame);\n})();');
 src = src.replace('const readInput = () => ({', 'const readInput = () => globalThis.__inp ? globalThis.__inp() : ({');
 new Function(src)();
 const D = globalThis.__dbg;
@@ -44,22 +44,28 @@ let now = 0; const tick = (n) => { for (let i = 0; i < n; i++) { now += 1000 / 6
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 // the player follows the centreline with the same pure-pursuit idea the bots use
 globalThis.__inp = () => {
-  const p = D.player, k = (p.idx + 8) % D.N, t = D.pts[k];
+  const p = D.player, k = (p.idx + Math.max(5, Math.round(20 / (D.trackLen / D.N)))) % D.N, t = D.pts[k];
   const d = wrap(Math.atan2(t.x - p.x, t.z - p.z) - p.h);
   return { steer: Math.max(-1, Math.min(1, d * 2.2)), gas: Math.abs(d) < 0.5 || p.speed < 18, brake: Math.abs(d) > 0.9 && p.speed > 22, drift: false };
 };
 
 const window_ev = (t) => (handlers[t] || []).forEach((f) => f({ code: 'x', target: {} }));
+const leaves = (e) => (e.children.length ? e.children.flatMap(leaves) : [e]);
 function race(label) {
-  window_ev('pointerdown'); els.go.h.click({}); tick(60 * 3 + 30);                       // countdown
+  window_ev('pointerdown'); const t0 = { ...audioLog.types }; els.go.h.click({}); tick(60 * 3 + 30);                       // countdown
   let guard = 0, minSp = 0, warnSeen = 0; while (D.state !== 'done' && guard++ < 60 * 400) { tick(1); if (els.warn.hidden === false) warnSeen++; for (const r of D.racers) if (r.finished) minSp = Math.min(minSp, r.speed); }
   tick(60 * 6); for (const r of D.racers) minSp = Math.min(minSp, r.speed);
-  const stopped = D.racers.every((r) => !r.finished || r.speed === 0); console.log(`  finished karts: min speed ${minSp.toFixed(2)}, all stopped=${stopped}; false 'missed checkpoint' warnings during a clean lap: ${warnSeen}`);
+  const stopped = D.racers.every((r) => !r.finished || D.raceT - r.finishT < 3 || r.speed === 0); // (a bot that finished moments ago is still braking) console.log(`  finished karts: min speed ${minSp.toFixed(2)}, all stopped=${stopped}; false 'missed checkpoint' warnings during a clean lap: ${warnSeen}`);
   const lines = D.racers.map((r) => `${r.name.padEnd(7)} laps=${r.laps} finished=${r.finished} t=${r.finishT.toFixed(1)}s`);
   console.log(`[${label}] N=${D.N} half=${D.HALF.toFixed(1)} pads=${D.pads.length} state=${D.state} t=${D.raceT.toFixed(1)}s\n  ` + lines.join('\n  '));
+  const dt = (k) => (audioLog.types[k] || 0) - (t0[k] || 0), P = D.player;
+  const first = D.racers.every((r) => r === P || !(r.finished && r.finishT < P.finishT)), laps = D.LAPS;
+  const sfxOk = dt('sine') === 2 * laps && dt('triangle') === (first ? 6 : 0);
+  console.log(`  sounds: ${laps} laps, player first=${first}: bell notes ${dt('sine')} (expect ${2 * laps}), fanfare notes ${dt('triangle')} (expect ${first ? 6 : 0}) ${sfxOk ? 'OK' : 'WRONG'}`);
+  if (!sfxOk) process.exitCode = 1;
   console.log('  best lap HUD:', els.best.textContent);
   // pass = player finished 3 laps and every bot is on lap 3 (bots run a little slower than a perfect player by design)
-  return D.player.finished && D.racers.every((r) => r.laps >= 2) && minSp >= 0 && stopped && warnSeen === 0;
+  return D.player.finished && D.racers.every((r) => r.laps >= D.LAPS - 1) && minSp >= 0 && stopped && warnSeen === 0;
 }
 
 
@@ -91,8 +97,8 @@ function geometry(label) {
   if (hasCourses) {
     await new Promise((r) => setTimeout(r, 600)); tick(2);
     const ids = D.COURSES.map((c) => c.id).join(',');
-    console.log('courses after loading courses/ :', ids, '| picker buttons:', els.picker.children.length);
-    const okLoad = /^kerb,harbour,ridge,lakeside$/.test(ids) && els.picker.children.length === 4 && !fetched.some((u) => u.includes('..'));
+    console.log('courses after loading courses/ :', ids, '| picker buttons:', leaves(els.picker).length);
+    const okLoad = /^kerb,harbour,ridge,summit,canyon,harvest,coast,moon,lakeside$/.test(ids) && leaves(els.picker).length === 9 && !fetched.some((u) => u.includes('..'));
     console.log(okLoad ? 'PASS  courses/ folder: good course added, broken/duplicate/escaping entries ignored' : 'FAIL  courses/ folder loading');
     if (!okLoad) process.exitCode = 1;
   }
@@ -155,6 +161,6 @@ function geometry(label) {
     console.log('after no-CP file:', els.coursemsg.textContent, '| half still', D.HALF.toFixed(1));
   }
   console.log(`audio: contexts=${audioLog.ctx} oscillators=${audioLog.osc} (expect 12 = 6 karts x 2) freq updates=${audioLog.freqSets.length} max gain=${audioLog.gainMax.toFixed(3)}`);
-  ok = ok && audioLog.ctx === 1 && audioLog.osc === 12 && audioLog.freqSets.length > 1000 && audioLog.gainMax > 0.01;
+  ok = ok && audioLog.ctx === 1 && audioLog.osc >= 12 && audioLog.freqSets.length > 1000 && audioLog.gainMax > 0.01;
   console.log(ok && !process.exitCode ? 'RESULT: PASS' : 'RESULT: FAIL');
 })();

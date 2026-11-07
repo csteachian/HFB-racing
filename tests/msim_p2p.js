@@ -174,16 +174,16 @@ const frames = (n) => { for (let i = 0; i < n; i++) tick(); };
   check('creating a room with a code that is already in use is refused', takenCode === 'taken', takenCode);
 
   // ---- a course loaded from courses/ works in the online lobby too
-  A.els.lobbypicker.children.find((b) => b.textContent === 'Lakeside Sprint').h.click();
+  (() => { const sel = A.els.lobbypicker; sel.value = 'lakeside'; sel.h.change({ target: sel }); })();
   await runUntil(() => [A, B, C].every((I) => I.D.loadedCourse === 'lakeside'), 600, 'lakeside sync');
   check('host picking a file-based course loads the same track for everyone', new Set([A, B, C].map((I) => I.D.trackLen.toFixed(1))).size === 1 && A.D.N > 300, 'N=' + A.D.N + ' len=' + A.D.trackLen.toFixed(0));
   check('lobby text shows that course\'s description', /Lakeside|flowing/.test(B.els.lobbymsg.textContent), B.els.lobbymsg.textContent);
 
   // ---- course sync + start
-  const pick = A.els.lobbypicker.children.find((b) => b.textContent === 'Harbour Hairpins'); pick.h.click();
+  (() => { const sel = A.els.lobbypicker; sel.value = 'harbour'; sel.h.change({ target: sel }); })();
   await runUntil(() => [A, B, C].every((I) => I.D.loadedCourse === 'harbour'), 600, 'course sync');
   check('host picking a course changes it for everyone', true);
-  check('non-host course buttons are disabled', B.els.lobbypicker.children.every((b) => b.disabled === true));
+  check('non-host course buttons are disabled', B.els.lobbypicker.disabled === true);
   A.els.startonline.h.click();
   await runUntil(() => [A, B, C].every((I) => I.D.state === 'count'), 600, 'countdown starts');
   check('all three players start the countdown from the host\'s start', true);
@@ -258,13 +258,13 @@ const frames = (n) => { for (let i = 0; i < n; i++) tick(); };
 
   // ---- a player whose browser could not load the course file is sent back to the menu with an explanation
   const E = makeInstance('Eve', 'e5e', 'file:'); all.push(E); frames(10); await sleep(20);
-  check('opened from a file:// address, courses/ is skipped quietly and built-in courses still work', E.D.COURSES.length === 3);
+  check('opened from a file:// address, courses/ is skipped quietly and built-in courses still work', E.D.COURSES.length === 8 && !E.D.COURSES.some((c) => c.gltf));
   A.els.nick.value = 'Alice'; A.els.create.h.click();
   await runUntil(() => A.D.state === 'lobby', 800, 'room 3', 2);
   const code3 = A.els.roomcode.textContent;
   E.els.nick.value = 'Eve'; E.els.code.value = code3; E.els.joinbtn.h.click();
   await runUntil(() => E.D.state === 'lobby' && A.els.players.children.length === 2, 1500, 'Eve joins', 2);
-  A.els.lobbypicker.children.find((b) => b.textContent === 'Lakeside Sprint').h.click();
+  (() => { const sel = A.els.lobbypicker; sel.value = 'lakeside'; sel.h.change({ target: sel }); })();
   await runUntil(() => /not loaded/.test(E.els.lobbymsg.textContent), 600, 'Eve told the course is missing');
   check('lobby tells that player the course has not loaded', true, E.els.lobbymsg.textContent);
   A.els.startonline.h.click();

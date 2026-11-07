@@ -14,7 +14,7 @@ python3 -m http.server 8000
 
 then visit http://localhost:8000.
 
-**Controls:** arrow keys or WASD to drive, Space or Shift to drift (release in a corner for a boost), M to mute. On phones and tablets there are on-screen buttons.
+**Controls:** arrow keys or WASD to drive, Space or Shift to drift (release in a corner for a boost), M to mute. Pick a course from the dropdown on the menu. On phones and tablets there are on-screen buttons.
 
 ## Put it online with GitHub Pages
 
@@ -23,6 +23,14 @@ then visit http://localhost:8000.
 3. After a minute your game is at `https://<your-username>.github.io/<repository-name>/`.
 
 Pages serves over HTTPS, which online racing needs.
+
+## Built-in courses
+
+Kerb Circuit, Harbour Hairpins and Ridgeback are short (about 1 km, 3 laps). Pine Summit, Canyon Rush, Harvest Valley, Coast Highway and Moonlit Ridge are 3 to 4 km long (2 laps) with their own scenery: snowy pines and cabins, cacti and mesas, barns and hay bales, palms, villas and lighthouses, and street lamps at night. They are defined in the `COURSES` list in `game.js`; `tools/gen_courses.js` is the script that searched for their layouts (it checks corner tightness, road spacing and slope; run `npm install` in `tests` first).
+
+## Sounds
+
+Engine sounds for every kart (they rise with speed and fade with distance), a bell chime each time you complete a lap, and a short fanfare if you finish first. M or the Sound button mutes everything. Browsers only allow sound after your first click or key press.
 
 ## Rules worth knowing
 
@@ -55,11 +63,12 @@ Drop a Blender `.glb` into `courses/` and add one entry to `courses/courses.json
   "blurb": "One line shown under the course name.",
   "sky": "#5b86b0",
   "ground": "#4f7a4a",
-  "half": 9
+  "half": 9,
+  "laps": 3
 }
 ```
 
-Only `file` is required. `id` is a short unique name, `sky` and `ground` are colours, and `half` is half the road width in metres (leave it out to measure it from the `Road` mesh). The course then shows up in the picker and in the online lobby, and everyone in a room loads the same file. Reload the page after changing the folder.
+Only `file` is required. `id` is a short unique name, `sky` and `ground` are colours, and `half` is half the road width in metres (leave it out to measure it from the `Road` mesh), and `laps` is the race length (default 3). The course then appears in the course dropdown (under "From the courses folder") and in the online lobby, and everyone in a room loads the same file. Reload the page after changing the folder.
 
 - `courses/lakeside-sprint.glb` is a working example. `tools/make_course_example.py` is the script that made it: edit its `CPS` list to reshape the track, run `python3 tools/make_course_example.py courses/my-track.glb`, and add it to the manifest.
 - Courses load only when the game is served over http(s). Opening `index.html` straight from disk shows the built-in courses only.

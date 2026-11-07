@@ -85,6 +85,8 @@ body{
 .course .note{margin:0}
 .field{display:block;width:100%;box-sizing:border-box;margin:6px 0 12px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:11px 12px;font:600 16px/1 var(--body);-webkit-user-select:text;user-select:text}
 .field.short{width:auto;flex:1 1 120px;margin:0;text-transform:uppercase;letter-spacing:.12em}
+.sel{cursor:pointer;margin:8px 0 10px;color-scheme:dark}
+.sel:disabled{cursor:default;opacity:.75}
 .field:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
 .gap{margin:12px 0}
 .ghost.big{padding:12px 18px;font-size:16px}
@@ -155,7 +157,7 @@ dd{margin:0}
 <section class="overlay" id="menu">
   <div class="card">
     <h1>HFB <span>Racing</span></h1>
-    <p class="sub">Three laps against five bots. Pick a course below, or import your own from Blender. Prototype build.</p>
+    <p class="sub">Race five bots over two or three laps. Pick a course below, or import your own from Blender. Prototype build.</p>
     <dl>
       <dt>Steer</dt><dd>Arrow keys or A / D</dd>
       <dt>Gas / brake</dt><dd>Up / Down or W / S</dd>
@@ -164,7 +166,7 @@ dd{margin:0}
     </dl>
     <div class="course" role="group" aria-label="Course">
       <span class="k">Course</span>
-      <div class="picker" id="picker" role="radiogroup"></div>
+      <select class="field sel" id="picker" aria-label="Course"></select>
       <p class="blurb" id="coursemsg"></p>
       <div class="row">
         <button class="ghost" id="pick" type="button">Import .glb track</button>
@@ -205,7 +207,7 @@ dd{margin:0}
     <span class="k gap">Players</span>
     <ul class="players" id="players"></ul>
     <span class="k">Course</span>
-    <div class="picker" id="lobbypicker"></div>
+    <select class="field sel" id="lobbypicker" aria-label="Course"></select>
     <p class="blurb" id="lobbymsg"></p>
     <div class="row">
       <button class="cta" id="startonline" type="button" hidden>Start race</button>

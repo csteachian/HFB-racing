@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 const T = THREE;
-const LAPS = 3;
+let LAPS = 3; // per course: a course can set `laps`
 const FAR = 25; // metres beyond the road edge where the player counts as off course
 const GATES = 14; // checkpoints around the lap; gate 0 is the start line
 let N = 300, HALF = 10, GRID_STEP = 4;
@@ -22,7 +22,8 @@ const scene = new T.Scene();
 scene.background = new T.Color(SKY);
 scene.fog = new T.Fog(SKY, 90, 330);
 const camera = new T.PerspectiveCamera(68, 1, 0.5, 600);
-scene.add(new T.HemisphereLight(0xcfe0ff, 0x2a4a3a, 0.95));
+const hemi = new T.HemisphereLight(0xcfe0ff, 0x2a4a3a, 0.95);
+scene.add(hemi);
 const sun = new T.DirectionalLight(0xffe2b0, 0.9);
 sun.position.set(-80, 120, 60);
 scene.add(sun);
@@ -47,6 +48,26 @@ const COURSES = [
   { id: 'ridge', name: 'Ridgeback', blurb: 'Fast and hilly, with a long climb and a drop to the finish.',
     half: 11, scale: 0.85, sky: 0xd08a5b, ground: 0x6b5a3a, pads: [0.1, 0.34, 0.6, 0.85],
     ctrl: [[0,-140,0],[100,-135,3],[190,-85,9],[215,0,13],[170,80,8],[90,120,3],[10,85,0],[-60,110,4],[-140,95,10],[-205,20,12],[-185,-70,8],[-110,-130,3]] },
+  { id: 'summit', name: 'Pine Summit', blurb: 'A long alpine climb through snowy pines, then a fast run back down.',
+    half: 11, laps: 2, sky: 0x9fc3e0, ground: 0xe3ecf0, fog: [120,430], pads: [0.053, 0.205, 0.275, 0.426, 0.578, 0.654, 0.841, 0.907],
+    scenery: [['snowpine',380], ['rock',120], ['cabin',16]],
+    ctrl: [[-448,196,1.5],[-415,140,2.5],[-399,96,3.3],[-409,59,3.8],[-440,18,3.8],[-472,-34,3.8],[-487,-98,4],[-473,-170,5],[-430,-242,7.1],[-363,-310,10.4],[-279,-371,14.4],[-185,-422,18.7],[-83,-458,22.6],[18,-470,25.3],[107,-453,26.5],[173,-408,26],[212,-347,24],[232,-290,21.3],[254,-253,18.5],[299,-244,16.4],[378,-252,15.5],[478,-261,16],[570,-250,17.7],[625,-211,20.2],[623,-150,22.7],[571,-82,24.7],[495,-20,25.8],[427,31,26],[388,78,25.3],[376,135,24.1],[369,208,22.7],[341,292,21.4],[279,370,20.3],[186,424,19.3],[81,443,18.1],[-16,432,16.5],[-96,406,14.4],[-163,385,11.6],[-230,378,8.6],[-305,382,5.5],[-382,381,3],[-446,363,1.2],[-480,320,0.5],[-477,260,0.7]] },
+  { id: 'canyon', name: 'Canyon Rush', blurb: 'Red mesas and cacti on a sweeping desert road with long blind crests.',
+    half: 12, laps: 2, sky: 0xe3a56a, ground: 0xc78a4d, fog: [140,480], pads: [0.082, 0.237, 0.275, 0.446, 0.544, 0.702, 0.788, 0.94],
+    scenery: [['cactus',260], ['sandrock',200], ['mesa',28]],
+    ctrl: [[67,547,11.8],[19,591,11.2],[-34,586,10.4],[-82,530,9.4],[-118,449,8.3],[-147,376,7.4],[-179,329,6.8],[-225,298,6.6],[-281,265,7],[-336,213,7.8],[-381,139,8.8],[-414,51,9.7],[-434,-46,10.2],[-440,-146,10],[-426,-240,9.1],[-386,-313,7.4],[-323,-352,5.4],[-253,-359,3.3],[-195,-356,1.6],[-158,-376,0.6],[-135,-434,0.5],[-111,-519,1.3],[-72,-592,2.9],[-20,-617,4.9],[34,-586,7.1],[82,-525,9],[124,-470,10.5],[172,-442,11.5],[233,-426,12.1],[296,-392,12.4],[340,-320,12.6],[347,-219,12.9],[320,-117,13.2],[288,-35,13.6],[281,30,14],[313,104,14.4],[367,207,14.5],[406,329,14.4],[401,437,14.1],[349,494,13.7],[270,494,13.3],[196,467,12.9],[143,458,12.5],[105,490,12.2]] },
+  { id: 'harvest', name: 'Harvest Valley', blurb: 'Rolling farmland with barns and hay bales. Gentle hills and fast flowing bends.',
+    half: 11, laps: 2, sky: 0x8fc0e8, ground: 0x86a84a, pads: [0.03, 0.215, 0.275, 0.426, 0.604, 0.684, 0.775, 0.959],
+    scenery: [['hay',140], ['barn',14], ['pine',110], ['rock',20]],
+    ctrl: [[298,-125,7.7],[361,-110,8],[431,-84,8.4],[489,-42,8.8],[520,15,9.2],[518,79,9.5],[484,143,9.5],[428,199,9.2],[361,246,8.3],[290,286,7.1],[220,322,5.5],[150,355,3.7],[77,383,2.1],[2,402,1],[-71,407,0.5],[-139,395,0.7],[-195,368,1.6],[-238,332,2.9],[-272,295,4.4],[-303,262,5.6],[-339,234,6.4],[-383,209,6.5],[-430,181,6.1],[-471,144,5.2],[-496,97,4.2],[-496,43,3.3],[-470,-13,2.7],[-425,-65,2.6],[-371,-109,2.9],[-321,-149,3.7],[-280,-191,4.6],[-245,-242,5.5],[-209,-306,6.1],[-159,-378,6.5],[-90,-447,6.6],[-3,-498,6.4],[91,-518,6.2],[175,-499,6],[235,-444,5.9],[263,-367,6],[263,-286,6.3],[250,-216,6.6],[243,-168,7],[257,-140,7.3]] },
+  { id: 'coast', name: 'Coast Highway', blurb: 'Palm trees, white villas and lighthouses along a long sunny coast road.',
+    half: 12, laps: 2, sky: 0x7fc4e8, ground: 0xdcc88e, fog: [140,480], pads: [0.07, 0.237, 0.278, 0.422, 0.603, 0.699, 0.852, 0.914],
+    scenery: [['palm',260], ['house',36], ['sandrock',60], ['tower',5]],
+    ctrl: [[-420,463,7.8],[-401,366,6.7],[-357,267,5.1],[-314,188,3.5],[-295,136,2],[-310,101,0.9],[-352,65,0.5],[-401,14,0.9],[-437,-58,1.9],[-444,-146,3.4],[-421,-242,5],[-371,-336,6.3],[-301,-422,7],[-218,-494,7.2],[-126,-543,6.7],[-35,-562,5.9],[47,-546,5.1],[110,-499,4.4],[153,-438,4.1],[184,-387,4.3],[220,-363,4.8],[277,-370,5.6],[355,-391,6.4],[442,-403,7],[512,-383,7.4],[540,-324,7.6],[518,-239,7.7],[459,-149,7.9],[391,-72,8.4],[343,-12,9.1],[328,43,10.1],[338,112,11],[350,202,11.9],[338,307,12.4],[289,406,12.5],[210,477,12.1],[119,510,11.4],[32,513,10.6],[-44,507,9.8],[-113,512,9.3],[-186,533,9],[-266,559,8.9],[-343,566,8.8],[-400,535,8.5]] },
+  { id: 'moon', name: 'Moonlit Ridge', blurb: 'A night run over a pine ridge. Street lamps mark the road; watch the crests.',
+    half: 10, laps: 2, sky: 0x0a1226, ground: 0x1d3a33, fog: [50,270], dim: true, pads: [0.042, 0.198, 0.276, 0.409, 0.555, 0.662, 0.836, 0.905],
+    scenery: [['darkpine',320], ['rock',100], ['lamp',0]],
+    ctrl: [[-130,403,2.9],[-164,374,1],[-218,383,0.5],[-296,410,1.5],[-378,414,3.9],[-429,367,6.9],[-425,274,10],[-372,168,12.7],[-303,80,14.4],[-257,21,15],[-256,-29,14.6],[-289,-93,13.7],[-325,-182,12.5],[-335,-284,11.5],[-308,-375,11],[-253,-439,10.9],[-186,-474,11.2],[-119,-487,11.6],[-57,-483,12.1],[-1,-461,12.6],[45,-419,13],[78,-368,13.5],[106,-328,14.3],[139,-318,15.5],[191,-335,17.2],[259,-359,19],[330,-361,20.7],[382,-326,22],[403,-260,22.5],[400,-180,22.1],[392,-104,20.9],[392,-32,19.1],[399,45,17.2],[395,127,15.7],[363,204,14.9],[304,258,14.8],[233,283,15.4],[171,296,16.2],[127,322,16.7],[92,375,16.4],[52,444,15.1],[1,494,12.6],[-53,498,9.4],[-97,457,6]] },
 ];
 let pts = [], tan = [], nrm = [], pads = [], group = null, trackLen = 0;
 const headingOf = (t) => Math.atan2(t.x, t.z);
@@ -128,6 +149,8 @@ function addTrees() {
 }
 function applyTheme(c) {
   scene.background.set(c.sky); scene.fog.color.set(c.sky); ground.material.color.set(c.ground);
+  scene.fog.near = c.fog ? c.fog[0] : 90; scene.fog.far = c.fog ? c.fog[1] : 330;
+  hemi.intensity = c.dim ? 0.5 : 0.95; sun.intensity = c.dim ? 0.35 : 0.9; // a "dim" course is lit like a moonlit night
 }
 function bank(side, color) { // embankment from the outer kerb down to the ground, so raised roads do not float
   const o = side * (HALF + 1.4), pos = [], idx = [];
@@ -143,9 +166,55 @@ function bank(side, color) { // embankment from the outer kerb down to the groun
   g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
   group.add(new T.Mesh(g, new T.MeshLambertMaterial({ color, side: T.DoubleSide })));
 }
+
+/* ---------- scenery: instanced roadside objects, chosen per course ---------- */
+// Each kind is a list of parts [geometry, colour, flat?] drawn many times. `min`/`max` are metres beyond the road edge.
+const SCN = {
+  pine: { min: 8, max: 150, scale: [0.8, 1.5], parts: () => [[new T.ConeGeometry(3, 8, 6).translate(0, 5.5, 0), 0x1f5a3f], [new T.CylinderGeometry(0.5, 0.6, 2).translate(0, 1, 0), 0x5a3b26]] },
+  darkpine: { min: 8, max: 150, scale: [0.9, 1.7], parts: () => [[new T.ConeGeometry(3, 8, 6).translate(0, 5.5, 0), 0x12372c], [new T.CylinderGeometry(0.5, 0.6, 2).translate(0, 1, 0), 0x2e2018]] },
+  snowpine: { min: 8, max: 160, scale: [0.9, 1.7], parts: () => [[new T.ConeGeometry(3, 8, 6).translate(0, 5.5, 0), 0x27604a], [new T.ConeGeometry(2, 3.4, 6).translate(0, 9.6, 0), 0xf2f6f8], [new T.CylinderGeometry(0.5, 0.6, 2).translate(0, 1, 0), 0x5a3b26]] },
+  rock: { min: 6, max: 140, scale: [0.8, 3], parts: () => [[new T.DodecahedronGeometry(1.6).scale(1.25, 0.8, 1).translate(0, 0.6, 0), 0x7d8088]] },
+  sandrock: { min: 6, max: 160, scale: [0.9, 3.4], parts: () => [[new T.DodecahedronGeometry(1.6).scale(1.25, 0.85, 1).translate(0, 0.6, 0), 0xa8603a]] },
+  mesa: { min: 55, max: 380, scale: [0.9, 2.4], parts: () => [[new T.CylinderGeometry(16, 21, 26, 7).translate(0, 13, 0), 0xb5683c], [new T.CylinderGeometry(16.2, 16.6, 3, 7).translate(0, 21, 0), 0xd08a52]] },
+  cactus: { min: 7, max: 120, scale: [0.8, 1.6], parts: () => [[new T.CylinderGeometry(0.55, 0.65, 5).translate(0, 2.5, 0), 0x3f8f4f], [new T.CylinderGeometry(0.35, 0.35, 2).rotateZ(Math.PI / 2).translate(1.1, 3, 0), 0x3f8f4f], [new T.CylinderGeometry(0.35, 0.35, 1.8).translate(2, 3.8, 0), 0x3f8f4f]] },
+  cabin: { min: 18, max: 120, scale: [0.9, 1.4], parts: () => [[new T.BoxGeometry(6, 3.5, 5).translate(0, 1.75, 0), 0x8a5a3a], [new T.ConeGeometry(5, 2.6, 4).rotateY(Math.PI / 4).translate(0, 4.8, 0), 0x3b2a22]] },
+  barn: { min: 22, max: 130, scale: [0.9, 1.3], parts: () => [[new T.BoxGeometry(8, 5, 12).translate(0, 2.5, 0), 0xa63d2f], [new T.ConeGeometry(7.4, 3.2, 4).rotateY(Math.PI / 4).scale(1, 1, 1.5).translate(0, 6.6, 0), 0x6b6f77]] },
+  hay: { min: 8, max: 110, scale: [0.9, 1.5], parts: () => [[new T.CylinderGeometry(1.3, 1.3, 1.8, 10).rotateZ(Math.PI / 2).translate(0, 1.3, 0), 0xd9b64a]] },
+  palm: { min: 7, max: 110, scale: [0.9, 1.5], parts: () => [[new T.CylinderGeometry(0.3, 0.5, 8, 6).translate(0, 4, 0), 0x8b6b3d], [new T.SphereGeometry(2.8, 7, 4).scale(1, 0.35, 1).translate(0, 8.4, 0), 0x2f8f4a]] },
+  house: { min: 16, max: 110, scale: [0.9, 1.4], parts: () => [[new T.BoxGeometry(6, 3.6, 5).translate(0, 1.8, 0), 0xf2efe6], [new T.ConeGeometry(5, 2.2, 4).rotateY(Math.PI / 4).translate(0, 4.7, 0), 0x3a7ca5]] },
+  tower: { min: 25, max: 90, scale: [1, 1.5], parts: () => [[new T.CylinderGeometry(2, 3, 22, 10).translate(0, 11, 0), 0xf1eee6], [new T.CylinderGeometry(2.3, 2.6, 4, 10).translate(0, 15, 0), 0xd2402f], [new T.CylinderGeometry(2.8, 2.8, 1.2, 10).translate(0, 22.6, 0), 0x2c303b], [new T.SphereGeometry(1.6, 8, 6).translate(0, 24, 0), 0xffe9a0, true]] },
+  lamp: { along: 38, parts: () => [[new T.CylinderGeometry(0.15, 0.2, 7).translate(0, 3.5, 0), 0x2c303b], [new T.SphereGeometry(0.55, 8, 6).translate(0, 7.2, 0), 0xffe9a0, true]] },
+};
+function addScenery(c) {
+  const spacing = trackLen / N, d = new T.Object3D();
+  c.scenery.forEach(([kind, count], ki) => {
+    const def = SCN[kind]; if (!def) return;
+    let seed = 1000 + ki * 7919 + Math.round(trackLen); const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const pos = [];
+    if (def.along) {
+      const step = Math.max(3, Math.round(def.along / spacing));
+      for (let i = 0, k = 0; i < N; i += step, k++) { const o = (k % 2 ? 1 : -1) * (HALF + 3.4); pos.push([pts[i].x + nrm[i].x * o, pts[i].y, pts[i].z + nrm[i].z * o, 1, headingOf(tan[i])]); }
+    } else {
+      for (let tries = 0; pos.length < count && tries < count * 60; tries++) {
+        const i = Math.floor(rnd() * N), o = (rnd() < 0.5 ? -1 : 1) * (HALF + 1.4 + def.min + rnd() * (def.max - def.min) + pts[i].y * 1.3);
+        const x = pts[i].x + nrm[i].x * o, z = pts[i].z + nrm[i].z * o;
+        if (Math.abs(x) > 1100 || Math.abs(z) > 1100) continue;
+        let ok = true; // keep clear of every stretch of road and its embankment, not just the one we measured from
+        for (let q = 0; q < N; q += 2) if (Math.hypot(pts[q].x - x, pts[q].z - z) < HALF + 3 + def.min * 0.5 + pts[q].y * 1.3) { ok = false; break; }
+        if (ok) pos.push([x, 0, z, def.scale[0] + rnd() * (def.scale[1] - def.scale[0]), rnd() * 6.283]);
+      }
+    }
+    if (!pos.length) return;
+    for (const [geo, col, flat] of def.parts()) {
+      const m = new T.InstancedMesh(geo, flat ? new T.MeshBasicMaterial({ color: col }) : new T.MeshLambertMaterial({ color: col }), pos.length);
+      pos.forEach(([x, y, z, k, ry], n) => { d.position.set(x, y, z); d.rotation.set(0, ry, 0); d.scale.set(k, k, k); d.updateMatrix(); m.setMatrixAt(n, d.matrix); });
+      group.add(m);
+    }
+  });
+}
 function buildCourse(c) {
   if (c.gltf) { buildImported(c.gltf, c); return; }
-  const sc = c.scale || 1; loadedCourse = c.id;
+  const sc = c.scale || 1; loadedCourse = c.id; LAPS = c.laps || 3;
   setCenterline(c.ctrl.map(([x, z, y]) => new T.Vector3(x * sc, (y || 0) * sc, z * sc))); HALF = c.half;
   pts.forEach((p) => { p.y = Math.max(0, p.y); }); // the spline can undershoot 0 slightly; keep the road above the ground
   applyTheme(c); newGroup();
@@ -159,7 +228,7 @@ function buildCourse(c) {
     const i = Math.round(N * f) % N;
     addPad(pts[i].clone().addScaledVector(nrm[i], (k % 2 ? 0.3 : -0.3) * HALF), headingOf(tan[i]));
   });
-  addStartLine(); addTrees();
+  addStartLine(); if (c.scenery) addScenery(c); else addTrees();
 }
 const nearestIdx = (x, z) => { let b = 1e12, bi = 0; pts.forEach((p, i) => { const q = (p.x - x) ** 2 + (p.z - z) ** 2; if (q < b) { b = q; bi = i; } }); return bi; };
 
@@ -190,7 +259,7 @@ function buildImported(gltf, meta) { // meta: a course loaded from courses/ (the
   const near = dists.filter((d) => d < 60).sort((a, b) => a - b);
   HALF = meta && meta.half ? clamp(meta.half, 3, 40) : near.length ? clamp(near[Math.floor(near.length * 0.9)], 3, 40) : 10;
   drop.forEach((o) => o.parent && o.parent.remove(o));
-  applyTheme(meta || COURSES[0]); newGroup(); group.add(root); loadedCourse = meta ? meta.id : 'imported';
+  applyTheme(meta || COURSES[0]); newGroup(); group.add(root); loadedCourse = meta ? meta.id : 'imported'; LAPS = meta && meta.laps ? meta.laps : 3;
   padPos.forEach((p) => addPad(p, headingOf(tan[nearestIdx(p.x, p.z)])));
   addStartLine();
   return { points: cps.length, half: HALF, assumed: !near.length };
@@ -278,7 +347,7 @@ function step(r, inp, dt) {
   r.drifting = drifting;
 }
 function botInput(r) {
-  const k = (r.idx + 7) % N, lane = clamp(r.lane, -HALF * 0.6, HALF * 0.6);
+  const k = (r.idx + Math.max(5, Math.round(18 / (trackLen / N)))) % N, lane = clamp(r.lane, -HALF * 0.6, HALF * 0.6);
   const tx = pts[k].x + nrm[k].x * lane, tz = pts[k].z + nrm[k].z * lane;
   const diff = angDiff(Math.atan2(tx - r.x, tz - r.z) - r.h);
   r.cc = r.base + clamp((progress(player) - progress(r)) * 0.0007, -0.05, 0.05); // gentle catch-up
@@ -288,7 +357,7 @@ function botInput(r) {
 /* ---------- input ---------- */
 const keys = {}, touch = {};
 const BLOCK = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'];
-window.addEventListener('keydown', (e) => { if (e.target && e.target.tagName === 'INPUT') return; keys[e.code] = true; if (e.code === 'KeyM' && !e.repeat) toggleSound(); if (BLOCK.includes(e.code)) e.preventDefault(); });
+window.addEventListener('keydown', (e) => { if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return; keys[e.code] = true; if (e.code === 'KeyM' && !e.repeat) toggleSound(); if (BLOCK.includes(e.code)) e.preventDefault(); });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 document.querySelectorAll('.tbtn').forEach((b) => {
   const k = b.dataset.k, set = (v) => (e) => { e.preventDefault(); touch[k] = v; b.classList.toggle('on', v); };
@@ -307,7 +376,7 @@ let state = 'menu', cd = 0, goT = 0, raceT = 0, lapStart = 0, best = Infinity, c
 const fmt = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(2).padStart(5, '0')}`;
 function lapCrossed() {
   if (player.laps === 0) { lapStart = raceT; return; }
-  if (player.laps > 0) { best = Math.min(best, raceT - lapStart); lapStart = raceT; $('best').textContent = fmt(best); }
+  if (player.laps > 0) { best = Math.min(best, raceT - lapStart); lapStart = raceT; $('best').textContent = fmt(best); if (player.laps < LAPS) playChime(); }
 }
 function playerFinished() { endTimer = 1.4; }
 function renderBoard() {
@@ -341,7 +410,7 @@ function checkLost(dt) {
     p.gate = next;
     if (next === 0) { // start line: a lap is done
       p.laps++; lapCrossed();
-      if (p.laps >= LAPS && !p.finished) { p.finished = true; p.finishT = raceT; playerFinished(); }
+      if (p.laps >= LAPS && !p.finished) { p.finished = true; p.finishT = raceT; playerFinished(); if (racers.every((r) => r === p || !r.finished)) playFanfare(); else playChime(); }
     }
   } else if (!missed && ahead > 6 && ahead < N / GATES) missed = true;
   if (!(missed || p.dist > HALF + FAR)) { lostT = 0; return; }
@@ -354,12 +423,13 @@ function checkLost(dt) {
 function startRace() {
   resetRacers(); lostT = 0; missed = false; raceT = 0; lapStart = 0; best = Infinity; endTimer = 0; $('best').textContent = '--';
   camH = player.h; cd = 3; state = 'count';
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // so the keys drive the kart, not a focused menu control
   $('menu').hidden = true; $('results').hidden = true; $('lobby').hidden = true; $('join').hidden = true; $('hud').hidden = false;
 }
 $('go').addEventListener('click', startRace);
 $('again').addEventListener('click', () => (online.on ? hostStart('live') : startRace()));
 $('tomenu').addEventListener('click', () => { if (online.on) { leaveRoom(); return; } $('results').hidden = true; $('menu').hidden = false; state = 'menu'; resetRacers(); });
-window.addEventListener('keydown', (e) => { if (e.code === 'Enter' && !online.on && !(e.target && e.target.tagName === 'INPUT') && (state === 'menu' || state === 'done')) startRace(); });
+window.addEventListener('keydown', (e) => { if (e.code === 'Enter' && !online.on && !(e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) && (state === 'menu' || state === 'done')) startRace(); });
 
 /* ---------- course picker and import ---------- */
 let current = 'kerb', imported = null; // imported = { name, data, info }
@@ -370,18 +440,19 @@ function describe() {
   const tail = `${(trackLen / 1000).toFixed(2)} km, ${Math.round(HALF * 2)} m wide.`;
   m.textContent = current === 'imported' ? `${imported.info}. ${tail}` : `${COURSES.find((c) => c.id === current).blurb} ${tail}`;
 }
-function renderPicker() {
-  const box = $('picker'); box.textContent = '';
-  const items = COURSES.map((c) => ({ id: c.id, name: c.name }));
-  if (imported) items.push({ id: 'imported', name: imported.name });
-  for (const it of items) {
-    const b = document.createElement('button'); b.type = 'button'; b.textContent = it.name;
-    b.className = 'opt' + (it.id === current ? ' on' : '');
-    b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(it.id === current));
-    b.addEventListener('click', () => selectCourse(it.id));
-    box.appendChild(b);
+function fillSelect(sel, withImported) {
+  const groups = [['Built-in', COURSES.filter((c) => !c.gltf)], ['From the courses folder', COURSES.filter((c) => c.gltf)]];
+  if (withImported && imported) groups.push(['Imported file', [{ id: 'imported', name: imported.name }]]);
+  const used = groups.filter((g) => g[1].length); sel.textContent = '';
+  for (const [label, list] of used) {
+    let into = sel;
+    if (used.length > 1) { into = document.createElement('optgroup'); into.label = label; sel.appendChild(into); }
+    for (const it of list) { const o = document.createElement('option'); o.value = it.id; o.textContent = it.name; into.appendChild(o); }
   }
 }
+const typing = (e) => e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT');
+function renderPicker() { const sel = $('picker'); fillSelect(sel, true); sel.value = current; }
+$('picker').addEventListener('change', (e) => { selectCourse(e.target.value); if (e.target.blur) e.target.blur(); renderPicker(); });
 function finishSelect(id) { current = id; resetRacers(); buildMap(); renderPicker(); describe(); }
 function loadImported(data, done) {
   if (!THREE.GLTFLoader) { fail('The track loader did not load. Check your connection and reload.'); return; }
@@ -425,7 +496,7 @@ function loadCourseFile(m) {
         let cps = 0; gltf.scene.traverse((o) => { if (!o.isMesh && CP_RE.test(o.name || '')) cps++; });
         if (cps < 4) { console.warn('courses/' + m.file + ': needs at least 4 empties named CP, CP.001 ...'); return none(); }
         resolve({ id, name: String(m.name || id).slice(0, 24), blurb: String(m.blurb || `${cps} control points.`).slice(0, 140),
-          sky: hexNum(m.sky, COURSES[0].sky), ground: hexNum(m.ground, COURSES[0].ground), half: Number(m.half) > 0 ? Number(m.half) : 0, gltf });
+          sky: hexNum(m.sky, COURSES[0].sky), ground: hexNum(m.ground, COURSES[0].ground), half: Number(m.half) > 0 ? Number(m.half) : 0, laps: Number.isInteger(m.laps) ? clamp(m.laps, 1, 9) : 3, gltf });
       }, () => { console.warn('courses/' + m.file + ' could not be read'); none(); });
     }).catch(() => { console.warn('courses/' + m.file + ' could not be loaded'); none(); });
   });
@@ -632,6 +703,7 @@ function hostStart(phase) {
   const roster = viewersOf(online.room.peers()).map((p) => p.peer).sort().slice(0, 6);
   online.room.presence({ race: { n: Math.max(online.seenN, cfg.n || 0) + 1, phase, course: cfg.course || loadedCourse, roster: phase === 'live' ? roster : [] } });
 }
+$('lobbypicker').addEventListener('change', (e) => { hostCourse(e.target.value); if (e.target.blur) e.target.blur(); });
 function hostCourse(id) { if (isHost()) online.room.presence({ race: Object.assign({}, online.cfg, { course: id }) }); }
 function refreshLobby() {
   if (state !== 'lobby' || !online.on) return;
@@ -644,11 +716,9 @@ function refreshLobby() {
     li.appendChild(n); li.appendChild(t); ul.appendChild(li);
   }
   $('startonline').hidden = !host; $('lobbywait').hidden = host;
-  const box = $('lobbypicker'); box.textContent = ''; const shown = cfg.course || loadedCourse;
-  for (const c of COURSES) {
-    const b = document.createElement('button'); b.type = 'button'; b.textContent = c.name; b.className = 'opt' + (c.id === shown ? ' on' : ''); b.disabled = !host;
-    b.addEventListener('click', () => hostCourse(c.id)); box.appendChild(b);
-  }
+  const box = $('lobbypicker'), shown = cfg.course || loadedCourse, key = COURSES.length + (host ? 'h' : 'g'); // rebuilt only when the list changes, so an open dropdown is not closed by updates
+  if (box.dataset.key !== key) { fillSelect(box, false); box.dataset.key = key; }
+  box.disabled = !host; if (box.value !== shown) box.value = shown;
   const c = builtIn(shown);
   $('lobbymsg').textContent = online.spectating ? 'A race is in progress. You will join the next one.' : (c ? c.blurb : 'This course has not loaded in your browser. Reload the page.');
 }
@@ -730,6 +800,22 @@ function setSoundLabel() { $('snd').textContent = soundOn ? 'Sound on' : 'Sound 
 function toggleSound() {
   soundOn = !soundOn; setSoundLabel(); ensureAudio();
   if (audio) { audio.master.gain.setTargetAtTime(soundOn ? 0.5 : 0, audio.ctx.currentTime, 0.03); if (soundOn && audio.ctx.state === 'suspended') audio.ctx.resume(); }
+}
+function tone(freq, at, dur, type, vol) {
+  const c = audio.ctx, o = c.createOscillator(), g = c.createGain(), t = c.currentTime + at;
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(audio.master); o.start(t); o.stop(t + dur + 0.05);
+}
+function playChime() { // two bell-like notes, a fifth apart
+  if (!audio || !soundOn) return;
+  tone(1318.5, 0, 0.7, 'sine', 0.5); tone(1975.5, 0.11, 0.9, 'sine', 0.42);
+}
+function playFanfare() { // short rising arpeggio ending on a bright chord
+  if (!audio || !soundOn) return;
+  [[523.25, 0], [659.25, 0.12], [783.99, 0.24]].forEach(([f, at]) => tone(f, at, 0.28, 'triangle', 0.5));
+  [[1046.5, 0.36], [1318.5, 0.36], [1568, 0.36]].forEach(([f, at]) => tone(f, at, 1.3, 'triangle', 0.4));
+  tone(2093, 0.48, 0.9, 'sine', 0.22); tone(2637, 0.6, 0.9, 'sine', 0.18);
 }
 function updateAudio(dt) {
   if (!audio || !soundOn) return;

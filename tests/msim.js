@@ -121,10 +121,10 @@ const names = (I) => I.D.racers.map((r) => r.name + ':' + r.kind[0]).join(' ');
   check('a code with no room is rejected and stays out', D.D.state === 'menu' && D.D.online.on === false, D.els.joinmsg.textContent);
 
   // ---- course sync + start
-  const pick = A.els.lobbypicker.children.find((b) => b.textContent === 'Harbour Hairpins'); pick.h.click();
+  (() => { const sel = A.els.lobbypicker; sel.value = 'harbour'; sel.h.change({ target: sel }); })();
   await runUntil(() => [A, B, C].every((I) => I.D.loadedCourse === 'harbour'), 600, 'course sync');
   check('host picking a course changes it for everyone', true);
-  check('non-host course buttons are disabled', B.els.lobbypicker.children.every((b) => b.disabled === true));
+  check('non-host course buttons are disabled', B.els.lobbypicker.disabled === true);
   A.els.startonline.h.click();
   await runUntil(() => [A, B, C].every((I) => I.D.state === 'count'), 600, 'countdown starts');
   check('all three players start the countdown from the host\'s start', true);
