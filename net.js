@@ -32,10 +32,11 @@
 
   const plain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
-  // The hub never trusts other players: they may only set a short name and their own kart state.
+  // The hub never trusts other players: they may only set a short name, a version label and their own kart state.
   function cleanClientPatch(p) {
     const out = {};
     if (!plain(p)) return out;
+    if (typeof p.ver === 'string') out.ver = p.ver.slice(0, 24);
     if (typeof p.nick === 'string') out.nick = p.nick.replace(/[^\p{L}\p{N} _.-]/gu, '').trim().slice(0, 12);
     if (Array.isArray(p.s) && p.s.length <= 12 && p.s.every((x) => typeof x === 'number' && isFinite(x))) out.s = p.s;
     return out;

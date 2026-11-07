@@ -96,6 +96,7 @@ label.k{display:block}
 .players li{display:flex;justify-content:space-between;gap:10px;padding:7px 10px;background:var(--panel);border:1px solid var(--line);border-radius:6px;font-weight:600;overflow-wrap:anywhere}
 .tagpill{font:600 11px/1.6 var(--body);letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
 .snd{position:fixed;left:max(16px,env(safe-area-inset-left,0px));top:calc(66px + env(safe-area-inset-top,0px));background:var(--panel);padding:7px 10px;font-size:12px;pointer-events:auto}
+.rsp{top:calc(106px + env(safe-area-inset-top,0px))}
 .map{position:fixed;right:max(16px,env(safe-area-inset-right,0px));top:calc(66px + env(safe-area-inset-top,0px));background:var(--panel);border:1px solid var(--line);border-radius:8px;pointer-events:none}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .ghost{background:transparent;color:var(--ink);border:1px solid var(--ink-dim);border-radius:6px;padding:9px 13px;font:600 14px/1 var(--body);cursor:pointer}
@@ -133,7 +134,8 @@ dd{margin:0}
     </div>
   </div>
   <button class="ghost snd" id="snd" type="button" tabindex="-1">Sound on</button>
-  <div class="warn" id="warn" role="status" hidden><b>MISSED CHECKPOINT</b><span>Heading back to the track</span></div>
+  <button class="ghost snd rsp" id="rsp" type="button" tabindex="-1">Respawn (R)</button>
+  <div class="warn" id="warn" role="status" hidden><b id="warnt">MISSED CHECKPOINT</b><span>Heading back to the track</span></div>
   <canvas class="map" id="map" aria-label="Map of the course showing every kart"></canvas>
   <div class="speed">
     <div><b id="spd">0</b><small>km/h</small></div>
@@ -162,6 +164,7 @@ dd{margin:0}
       <dt>Steer</dt><dd>Arrow keys or A / D</dd>
       <dt>Gas / brake</dt><dd>Up / Down or W / S</dd>
       <dt>Drift</dt><dd>Hold Space in a corner, release for a boost</dd>
+      <dt>Respawn</dt><dd>R, to go back to your last checkpoint</dd>
       <dt>Boost pads</dt><dd>Drive over the amber chevrons</dd>
     </dl>
     <div class="course" role="group" aria-label="Course">
@@ -179,6 +182,7 @@ dd{margin:0}
       <button class="ghost big" id="online" type="button" hidden>Race online</button>
     </div>
     <p class="note" id="nogl" hidden>This browser could not start WebGL, so the 3D view is unavailable.</p>
+    <p class="note" id="ver"></p>
   </div>
 </section>
 
@@ -233,8 +237,8 @@ dd{margin:0}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js" integrity="sha384-nlUQ8ZqCbvStErob+biJNzSgltf6urV3VGqhfIfzhmg9RXmpeRm76ELw0pYnKlTR" crossorigin="anonymous"></script>
-<script src="net.js"></script>
-<script src="game.js"></script>
+<script src="net.js?v=2026.11.07-d"></script>
+<script src="game.js?v=2026.11.07-d"></script>
 
 </body>
 </html>

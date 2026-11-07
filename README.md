@@ -14,7 +14,7 @@ python3 -m http.server 8000
 
 then visit http://localhost:8000.
 
-**Controls:** arrow keys or WASD to drive, Space or Shift to drift (release in a corner for a boost), M to mute. Pick a course from the dropdown on the menu. On phones and tablets there are on-screen buttons.
+**Controls:** arrow keys or WASD to drive, Space or Shift to drift (release in a corner for a boost), M to mute, R to respawn. Pick a course from the dropdown on the menu. On phones and tablets there are on-screen buttons.
 
 ## Put it online with GitHub Pages
 
@@ -34,7 +34,8 @@ Engine sounds for every kart (they rise with speed and fade with distance), a be
 
 ## Rules worth knowing
 
-- **Checkpoints:** laps only count if you pass every checkpoint in order, within the road width plus a small margin. Cutting across the infield or skipping ahead shows MISSED CHECKPOINT and puts you back on the last checkpoint you really passed after about 1.5 seconds. Staying more than 25 m off the road does the same, and you crawl at 27 km/h until then.
+- **Checkpoints:** laps only count if you pass every checkpoint in order, within the road width plus a small margin. Cutting across the infield or skipping ahead shows MISSED CHECKPOINT and puts you back on the last checkpoint you really passed after about 1.5 seconds. Staying more than 18 m off the road, or driving on the grass for more than 6 seconds, shows OFF COURSE and does the same (far from the road you also crawl at 27 km/h meanwhile).
+- **Respawn:** press **R** (or the Respawn button) to jump back to your last checkpoint at a gentle speed. It never gains you ground, and works again after a second.
 - **Grass** limits you to about 60 km/h.
 - **Boost** fades out over about 1.5 seconds. To tune it, change `FALLOFF_BASE` and `FALLOFF_RATE` just above `step()` in `game.js` (lower numbers give a longer fade). The number of checkpoints is `GATES` near the top of `game.js`.
 
@@ -99,6 +100,10 @@ Only `file` is required. `id` is a short unique name, `sky` and `ground` are col
 | `tests/` | Headless regression tests (see below) |
 
 Libraries are loaded from public CDNs: three.js r128 and PeerJS 1.5.4 (both MIT licensed). Add your own `LICENSE` file for the game itself.
+
+## Updating the live site
+
+GitHub Pages and browsers cache files, so players can end up with an old `game.js` after you push a change. The script tags in `index.html` end in `?v=...`; change that value (and `VERSION` at the top of `game.js`) whenever you publish, and everyone's browser fetches the new files. The menu shows the version, and the online lobby warns when players are on different versions.
 
 ## Tests
 

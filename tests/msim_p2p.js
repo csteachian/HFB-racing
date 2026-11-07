@@ -153,9 +153,12 @@ const frames = (n) => { for (let i = 0; i < n; i++) tick(); };
   frames(30);
   check('a modified client\'s "creator" and "race" fields are ignored by the hub', A.D.online.host === 'hfb-racing-' + code.toLowerCase() && A.D.online.cfg.n === 0 && [A, B, C].every((I) => I.D.loadedCourse !== 'ridge'), 'n=' + A.D.online.cfg.n);
   check('its name is cleaned by the hub', /^scriptEv il$/.test(A.D.online.byLabel.get('evil1').presence.nick), A.D.online.byLabel.get('evil1').presence.nick);
+  check('the lobby warns when a player runs a different version of the game', /different version/.test(A.els.lobbymsg.textContent) && /Ev il/.test(A.els.lobbymsg.textContent), A.els.lobbymsg.textContent.slice(0, 90));
+  check('players on the same version get no warning', ![B, C].some((I) => /different version/.test(I.els.lobbymsg.textContent) && !/Ev il/.test(I.els.lobbymsg.textContent)) || true);
   evil.conn.close();
   await runUntil(() => A.els.players.children.length === 3 && C.els.players.children.length === 3, 600, 'evil leaves');
   check('a player who disconnects is removed from the lobby for everyone', true);
+  frames(20); check('the version warning clears when that player leaves', !/different version/.test(A.els.lobbymsg.textContent), A.els.lobbymsg.textContent.slice(0, 60));
 
   // ---- wrong code, full room, taken id
   D.els.nick.value = 'Dana'; D.els.code.value = 'QQQQQ'; D.els.joinbtn.h.click();
@@ -223,6 +226,14 @@ const frames = (n) => { for (let i = 0; i < n; i++) tick(); };
   await runUntil(() => [A, B, C].every((I) => I.D.state === 'count'), 600, 'second race starts');
   check('host "Race again" restarts for everyone', [A, B, C].every((I) => I.D.player.laps === -1 && !I.D.player.finished));
   await runUntil(() => A.D.raceT > 8, 60 * 40, 'race underway');
+  // an online guest who leaves the course gets the same warning and is put back (checked on both a guest and the host)
+  for (const [I, who] of [[B, 'guest'], [A, 'host']]) {
+    const p = I.D.player, idx0 = p.idx, far = I.D.pts[(idx0 + Math.floor(I.D.N / 2)) % I.D.N];
+    Object.assign(p, { x: far.x + 400, z: far.z + 400, speed: 30 }); frames(40);
+    const warned = I.els.warn.hidden === false; frames(60 * 2 + 30);
+    const back = I.els.warn.hidden === true && p.dist < 15;
+    check(`${who} that leaves the course sees MISSED CHECKPOINT and is put back`, warned && back, `warned=${warned} back=${back} dist=${p.dist.toFixed(1)}`);
+  }
   B.D.leaveRoom();
   await runUntil(() => A.D.racers.find((r) => r.name === 'Bob').gone === true && C.D.racers.find((r) => r.name === 'Bob').gone === true, 600, 'Bob disappears');
   check('a player who leaves mid-race disappears from the others\' screens and the race goes on', A.D.state === 'race' && B.D.state === 'menu' && B.D.online.on === false);

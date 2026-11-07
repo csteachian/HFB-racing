@@ -35,7 +35,7 @@ globalThis.AudioContext = class { constructor() { audioLog.ctx++; this.state = '
 let raf = null; globalThis.requestAnimationFrame = (f) => { raf = f; };
 
 let src = fs.readFileSync(process.argv[2], 'utf8');
-src = src.replace('requestAnimationFrame(frame);\n})();', 'globalThis.__dbg = { racers, player, get N() { return N; }, get HALF() { return HALF; }, get state() { return state; }, get pts() { return pts; }, get pads() { return pads; }, get raceT() { return raceT; }, selectCourse, COURSES, step, playChime, get LAPS() { return LAPS; }, get lostT() { return lostT; }, get trackLen() { return trackLen; } };\nrequestAnimationFrame(frame);\n})();');
+src = src.replace('requestAnimationFrame(frame);\n})();', 'globalThis.__dbg = { racers, player, get N() { return N; }, get HALF() { return HALF; }, get state() { return state; }, get pts() { return pts; }, get pads() { return pads; }, get raceT() { return raceT; }, selectCourse, COURSES, step, playChime, get lostWhy() { return lostWhy; }, gateIdx: (k) => gateIdx(k), VERSION, get LAPS() { return LAPS; }, get lostT() { return lostT; }, get trackLen() { return trackLen; } };\nrequestAnimationFrame(frame);\n})();');
 src = src.replace('const readInput = () => ({', 'const readInput = () => globalThis.__inp ? globalThis.__inp() : ({');
 new Function(src)();
 const D = globalThis.__dbg;
@@ -138,6 +138,19 @@ function geometry(label) {
       console.log(`${what}: warning shown=${warned}, put back near the start of the cut (idx ${idx0} -> ${D.player.idx}, laps ${laps0} -> ${D.player.laps}) = ${back}`);
       casesOk = casesOk && warned && back; tick(60);
     }
+    // grass for too long, close to the road: counts as off course after a few seconds
+    { const I = D.player; const side = D.pts[I.idx], gx = side.x, gz = side.z; let seen = '', t = 0;
+      for (let f = 0; f < 60 * 12; f++) { const q = D.pts[I.idx]; const nx = -(D.pts[(I.idx + 1) % D.N].z - D.pts[(I.idx + D.N - 1) % D.N].z), nz = D.pts[(I.idx + 1) % D.N].x - D.pts[(I.idx + D.N - 1) % D.N].x, l = Math.hypot(nx, nz);
+        Object.assign(I, { x: q.x + (nx / l) * (D.HALF + 6), z: q.z + (nz / l) * (D.HALF + 6), speed: 0 }); tick(1); if (els.warn.hidden === false && !seen) { seen = D.lostWhy; t = f / 60; } if (seen && els.warn.hidden === true) break; }
+      const ok = seen === 'OFF COURSE' && t > 5.5 && t < 8.5;
+      console.log(`staying on the grass 6 m off the road: warning "${seen}" after ${t.toFixed(1)} s = ${ok}`); casesOk = casesOk && ok; tick(120); }
+    // the player's own Respawn key (R): back to the last checkpoint, gentle speed; ignored when not racing or too soon after the last press
+    { const I = D.player; I.speed = 35; tick(60); const gate = I.gate, gi = D.gateIdx(gate), x0 = I.x;
+      handlers.keydown.forEach((f) => f({ code: 'KeyR', target: {}, preventDefault() {} })); const jumped = Math.hypot(I.x - D.pts[gi].x, I.z - D.pts[gi].z) < 2 && I.speed === 10 && I.dist < 1;
+      I.speed = 35; handlers.keydown.forEach((f) => f({ code: 'KeyR', target: {}, preventDefault() {} })); const cooled = I.speed === 35; // second press within the cooldown does nothing
+      tick(60); const again = (() => { handlers.keydown.forEach((f) => f({ code: 'KeyR', target: {}, preventDefault() {} })); return I.speed === 10; })();
+      console.log(`Respawn key: back at last checkpoint (gate ${gate}) = ${jumped}, quick second press ignored = ${cooled}, works again after the cooldown = ${again}`);
+      casesOk = casesOk && jumped && cooled && again; tick(60); }
     let guard = 0; while (D.state !== 'done' && guard++ < 60 * 400) tick(1);
     const finished = D.player.finished && D.player.laps >= 3;
     console.log('  the race can still be finished afterwards:', finished);

@@ -2,7 +2,9 @@
 'use strict';
 const T = THREE;
 let LAPS = 3; // per course: a course can set `laps`
-const FAR = 25; // metres beyond the road edge where the player counts as off course
+const VERSION = '2026.11.07-d'; // shown on the menu and compared between players in an online lobby
+const FAR = 18; // metres beyond the road edge where the player counts as off course (and crawls)
+const GRASS_MAX = 6; // seconds of continuous grass before the player counts as off course
 const GATES = 14; // checkpoints around the lap; gate 0 is the start line
 let N = 300, HALF = 10, GRID_STEP = 4;
 const $ = (id) => document.getElementById(id);
@@ -357,7 +359,7 @@ function botInput(r) {
 /* ---------- input ---------- */
 const keys = {}, touch = {};
 const BLOCK = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'];
-window.addEventListener('keydown', (e) => { if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return; keys[e.code] = true; if (e.code === 'KeyM' && !e.repeat) toggleSound(); if (BLOCK.includes(e.code)) e.preventDefault(); });
+window.addEventListener('keydown', (e) => { if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return; keys[e.code] = true; if (e.code === 'KeyM' && !e.repeat) toggleSound(); if (e.code === 'KeyR' && !e.repeat) respawnKey(); if (BLOCK.includes(e.code)) e.preventDefault(); });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 document.querySelectorAll('.tbtn').forEach((b) => {
   const k = b.dataset.k, set = (v) => (e) => { e.preventDefault(); touch[k] = v; b.classList.toggle('on', v); };
@@ -398,13 +400,24 @@ function showResults() {
   renderBoard(); resultButtons(); boardT = 0.5;
   $('hud').hidden = true; $('results').hidden = false; state = 'done';
 }
-let lostT = 0, missed = false; // lostT: seconds the player has been off course or past a missed checkpoint
+let lostT = 0, missed = false, grassT = 0, lostWhy = 'MISSED CHECKPOINT'; // lostT: seconds the player has been off course or past a missed checkpoint
 const gateIdx = (k) => Math.round((k * N) / GATES) % N;
+function respawnAtGate(p) { // back to the last checkpoint really passed, facing along the road, at a gentle speed
+  const g = gateIdx(p.gate);
+  Object.assign(p, { x: pts[g].x, z: pts[g].z, y: pts[g].y, h: headingOf(tan[g]), speed: 10, steer: 0, boost: 0, drift: 0, dist: 0, idx: g, drifting: false });
+  camH = p.h; lostT = 0; missed = false; grassT = 0;
+}
+let lastRespawn = -1e9;
+function respawnKey() { // the player's own Respawn key / button
+  if (state !== 'race' || player.finished || tNow - lastRespawn < 800) return;
+  lastRespawn = tNow; respawnAtGate(player);
+}
 function checkLost(dt) {
   // The player must pass every checkpoint in order, within the road width plus a margin. A kart that cuts across the
-  // infield (or is far from the road) is warned, then put back on the last checkpoint it really passed.
+  // infield, stays far from the road or drives on the grass for too long is warned, then put back on the last
+  // checkpoint it really passed.
   const p = player;
-  if (p.finished) { lostT = 0; missed = false; return; }
+  if (p.finished) { lostT = 0; missed = false; grassT = 0; return; }
   const next = (p.gate + 1) % GATES, gi = gateIdx(next), ahead = ((p.idx - gi + N + N / 2) % N) - N / 2; // signed gap along the track
   if (!missed && Math.abs(ahead) <= 3 && p.dist <= HALF + 10) {
     p.gate = next;
@@ -413,15 +426,14 @@ function checkLost(dt) {
       if (p.laps >= LAPS && !p.finished) { p.finished = true; p.finishT = raceT; playerFinished(); if (racers.every((r) => r === p || !r.finished)) playFanfare(); else playChime(); }
     }
   } else if (!missed && ahead > 6 && ahead < N / GATES) missed = true;
-  if (!(missed || p.dist > HALF + FAR)) { lostT = 0; return; }
+  grassT = p.dist > HALF + 1.2 ? grassT + dt : 0;
+  if (!(missed || p.dist > HALF + FAR || grassT > GRASS_MAX)) { lostT = 0; return; }
+  lostWhy = missed ? 'MISSED CHECKPOINT' : 'OFF COURSE';
   lostT += dt;
-  if (lostT < 1.6) return;
-  const g = gateIdx(p.gate);
-  Object.assign(p, { x: pts[g].x, z: pts[g].z, y: pts[g].y, h: headingOf(tan[g]), speed: 10, steer: 0, boost: 0, drift: 0, dist: 0, idx: g, drifting: false });
-  camH = p.h; lostT = 0; missed = false;
+  if (lostT >= 1.6) respawnAtGate(p);
 }
 function startRace() {
-  resetRacers(); lostT = 0; missed = false; raceT = 0; lapStart = 0; best = Infinity; endTimer = 0; $('best').textContent = '--';
+  resetRacers(); lostT = 0; missed = false; grassT = 0; raceT = 0; lapStart = 0; best = Infinity; endTimer = 0; $('best').textContent = '--';
   camH = player.h; cd = 3; state = 'count';
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // so the keys drive the kart, not a focused menu control
   $('menu').hidden = true; $('results').hidden = true; $('lobby').hidden = true; $('join').hidden = true; $('hud').hidden = false;
@@ -628,7 +640,7 @@ async function joinRoom(raw, create) {
     }
     const nick = myNick(); try { localStorage.setItem('hfbracing-nick', nick); } catch (e) { /* storage can be unavailable */ }
     const startCourse = builtIn(loadedCourse) ? loadedCourse : COURSES[0].id;
-    room.presence(create ? { nick, creator: true, race: { n: 0, phase: 'lobby', course: startCourse, roster: [] } } : { nick });
+    room.presence(create ? { nick, ver: VERSION, creator: true, race: { n: 0, phase: 'lobby', course: startCourse, roster: [] } } : { nick, ver: VERSION });
     for (let i = 0; i < 30 && !room.peers().some((p) => p.isMe); i++) await wait(100);
     if (!create && !p2p) {
       await wait(1400); // others answer over a second or two
@@ -719,8 +731,9 @@ function refreshLobby() {
   const box = $('lobbypicker'), shown = cfg.course || loadedCourse, key = COURSES.length + (host ? 'h' : 'g'); // rebuilt only when the list changes, so an open dropdown is not closed by updates
   if (box.dataset.key !== key) { fillSelect(box, false); box.dataset.key = key; }
   box.disabled = !host; if (box.value !== shown) box.value = shown;
-  const c = builtIn(shown);
-  $('lobbymsg').textContent = online.spectating ? 'A race is in progress. You will join the next one.' : (c ? c.blurb : 'This course has not loaded in your browser. Reload the page.');
+  const c = builtIn(shown), odd = v.filter((p) => p.presence.ver !== VERSION);
+  $('lobbymsg').textContent = odd.length ? `Some players run a different version of the game (${odd.map(nickOf).join(', ')}). Everyone should reload the page before racing.`
+    : online.spectating ? 'A race is in progress. You will join the next one.' : (c ? c.blurb : 'This course has not loaded in your browser. Reload the page.');
 }
 
 function feed(r, a) {
@@ -839,6 +852,8 @@ function updateAudio(dt) {
 }
 for (const ev of ['pointerdown', 'keydown']) window.addEventListener(ev, () => ensureAudio(), true);
 $('snd').addEventListener('click', (e) => { toggleSound(); e.currentTarget.blur(); });
+$('rsp').addEventListener('click', (e) => { respawnKey(); e.currentTarget.blur(); });
+if ($('ver')) $('ver').textContent = 'Version ' + VERSION;
 document.addEventListener('visibilitychange', () => { if (!audio) return; if (document.hidden) audio.ctx.suspend(); else if (soundOn) audio.ctx.resume(); });
 
 /* ---------- loop ---------- */
@@ -907,7 +922,7 @@ function updateHud() {
   $('spd').textContent = String(Math.round(Math.abs(player.speed) * 3));
   const bar = $('driftbar'); bar.style.width = `${clamp(player.drift / 1.8, 0, 1) * 100}%`; bar.className = player.drift > 0.9 ? 'ready' : '';
   $('flag').hidden = !(player.boost > 0);
-  $('warn').hidden = !(lostT > 0 && state === 'race');
+  $('warn').hidden = !(lostT > 0 && state === 'race'); $('warnt').textContent = lostWhy;
   drawMap();
 }
 let last = performance.now();
