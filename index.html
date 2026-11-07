@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="HFB Racing: a 3D kart racer for the browser with three courses, Blender track import and online races with friends.">
+<meta name="theme-color" content="#101828">
+<title>HFB Racing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@500;600&display=swap">
+<style>
+/* Layout: full-bleed 3D view, slim stat chips on top, thumb controls at the bottom on touch screens. */
+:root{
+  --night:#101828; --asphalt:#2c303b; --ink:#eef2f7; --ink-dim:#a4afc2;
+  --accent:#ffb627; --accent-ink:#1a1304; --alert:#ff5a4d;
+  --panel:rgba(14,20,36,.78); --line:rgba(255,255,255,.16);
+  --display:'Barlow Condensed','Arial Narrow',Impact,sans-serif;
+  --body:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
+  color-scheme:dark;
+}
+[hidden]{display:none !important}
+html,body{height:100%;overflow:hidden}
+body{
+  margin:0;background:var(--night);color:var(--ink);font:500 15px/1.4 var(--body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  -webkit-user-select:none;user-select:none;touch-action:none;-webkit-tap-highlight-color:transparent;
+}
+#view{position:fixed;inset:0;width:100%;height:100%;display:block}
+.top{
+  position:fixed;left:0;right:0;top:0;display:flex;justify-content:space-between;gap:6px;pointer-events:none;
+  padding:calc(8px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 0 max(16px,env(safe-area-inset-left,0px));
+}
+.group{display:flex;gap:6px;min-width:0}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 9px;min-width:0}
+.k{display:block;font:600 10px/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim)}
+.v{display:block;font:700 25px/1.05 var(--display);font-variant-numeric:tabular-nums;white-space:nowrap}
+.speed{
+  position:fixed;left:50%;transform:translateX(-50%);pointer-events:none;text-align:center;
+  bottom:calc(18px + env(safe-area-inset-bottom,0px));
+}
+.speed b{font:700 44px/1 var(--display);font-variant-numeric:tabular-nums}
+.speed small{font:600 11px/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim);margin-left:4px}
+.meter{width:150px;height:6px;border-radius:3px;background:var(--line);margin:6px auto 0;overflow:hidden}
+.meter i{display:block;height:100%;width:0;background:var(--ink-dim)}
+.meter i.ready{background:var(--accent)}
+.flag{font:700 18px/1 var(--display);letter-spacing:.2em;color:var(--accent);margin-top:6px}
+.count{
+  position:fixed;inset:0;display:grid;place-items:center;pointer-events:none;
+  font:700 min(34vw,200px)/1 var(--display);color:var(--accent);text-shadow:0 4px 0 rgba(0,0,0,.35);
+}
+.touch{display:none}
+@media (pointer:coarse){
+  .speed{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
+  .touch{
+    display:flex;justify-content:space-between;align-items:flex-end;position:fixed;left:0;right:0;bottom:0;
+    padding:0 max(16px,env(safe-area-inset-right,0px)) calc(16px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));
+  }
+}
+.cluster{display:flex;gap:10px;align-items:flex-end}
+.tbtn{
+  width:70px;height:70px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink);
+  font:700 16px/1 var(--display);letter-spacing:.08em;text-transform:uppercase;touch-action:none;
+}
+.tbtn.big{width:92px;height:92px;background:var(--accent);color:var(--accent-ink);border-color:transparent;font-size:20px}
+.tbtn.sm{width:58px;height:58px;font-size:13px}
+.tbtn.on{outline:3px solid var(--ink)}
+.overlay{
+  position:fixed;inset:0;display:grid;place-items:end center;
+  padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) calc(20px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));
+  background:linear-gradient(to top,rgba(8,12,24,.9),rgba(8,12,24,.2) 70%);
+}
+.overlay{overflow-y:auto;touch-action:pan-y}
+.card{width:100%;max-width:420px;min-width:0}
+.course{margin:0 0 16px;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+.picker{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 10px}
+.opt{background:transparent;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:9px 12px;font:600 14px/1 var(--body);cursor:pointer;overflow-wrap:anywhere}
+.opt.on{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.opt:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+.blurb{margin:0 0 12px;font-size:14px;min-height:2.8em}
+.course .note{margin:0}
+.field{display:block;width:100%;box-sizing:border-box;margin:6px 0 12px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:11px 12px;font:600 16px/1 var(--body);-webkit-user-select:text;user-select:text}
+.field.short{width:auto;flex:1 1 120px;margin:0;text-transform:uppercase;letter-spacing:.12em}
+.field:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+.gap{margin:12px 0}
+.ghost.big{padding:12px 18px;font-size:16px}
+label.k{display:block}
+.code{font:700 clamp(48px,16vw,72px)/1 var(--display);letter-spacing:.14em;color:var(--accent);margin:2px 0 8px;-webkit-user-select:text;user-select:text}
+.players{list-style:none;margin:6px 0 14px;padding:0;display:grid;gap:4px}
+.players li{display:flex;justify-content:space-between;gap:10px;padding:7px 10px;background:var(--panel);border:1px solid var(--line);border-radius:6px;font-weight:600;overflow-wrap:anywhere}
+.tagpill{font:600 11px/1.6 var(--body);letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.snd{position:fixed;left:max(16px,env(safe-area-inset-left,0px));top:calc(66px + env(safe-area-inset-top,0px));background:var(--panel);padding:7px 10px;font-size:12px;pointer-events:auto}
+.map{position:fixed;right:max(16px,env(safe-area-inset-right,0px));top:calc(66px + env(safe-area-inset-top,0px));background:var(--panel);border:1px solid var(--line);border-radius:8px;pointer-events:none}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.ghost{background:transparent;color:var(--ink);border:1px solid var(--ink-dim);border-radius:6px;padding:9px 13px;font:600 14px/1 var(--body);cursor:pointer}
+.ghost:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+h1{margin:0;font:700 clamp(44px,15vw,72px)/.92 var(--display);letter-spacing:.02em;text-transform:uppercase;text-wrap:balance}
+h1 span{color:var(--accent)}
+.sub{margin:10px 0 16px;color:var(--ink-dim);max-width:34ch}
+dl{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0 0 18px;font-size:14px}
+dt{font:600 12px/1.6 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-dim)}
+dd{margin:0}
+.cta{
+  background:var(--accent);color:var(--accent-ink);border:0;border-radius:6px;padding:12px 28px;
+  font:700 26px/1 var(--display);letter-spacing:.06em;text-transform:uppercase;cursor:pointer;
+}
+.cta:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.note{margin:12px 0 0;font-size:12px;color:var(--ink-dim)}
+#board{list-style:none;margin:12px 0 18px;padding:0;display:grid;gap:4px}
+#board li{display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:baseline;padding:7px 10px;background:var(--panel);border:1px solid var(--line);border-radius:6px;font:700 22px/1 var(--display);font-variant-numeric:tabular-nums}
+#board li.me{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+#board .t{font-size:18px}
+</style>
+</head>
+<body>
+<canvas id="view" aria-label="Race view"></canvas>
+
+<div id="hud" hidden>
+  <div class="top">
+    <div class="group">
+      <div class="stat"><span class="k">Lap</span><span class="v" id="lap">1/3</span></div>
+      <div class="stat"><span class="k">Position</span><span class="v" id="pos">6/6</span></div>
+    </div>
+    <div class="group">
+      <div class="stat"><span class="k">Time</span><span class="v" id="time">0:00.00</span></div>
+      <div class="stat"><span class="k">Best lap</span><span class="v" id="best">--</span></div>
+    </div>
+  </div>
+  <button class="ghost snd" id="snd" type="button" tabindex="-1">Sound on</button>
+  <canvas class="map" id="map" aria-label="Map of the course showing every kart"></canvas>
+  <div class="speed">
+    <div><b id="spd">0</b><small>km/h</small></div>
+    <div class="meter" title="Drift charge"><i id="driftbar"></i></div>
+    <div class="flag" id="flag" hidden>BOOST</div>
+  </div>
+  <div class="touch">
+    <div class="cluster">
+      <button class="tbtn" data-k="left" aria-label="Steer left">&#9664;</button>
+      <button class="tbtn" data-k="right" aria-label="Steer right">&#9654;</button>
+    </div>
+    <div class="cluster">
+      <button class="tbtn sm" data-k="brake">Brake</button>
+      <button class="tbtn sm" data-k="drift">Drift</button>
+      <button class="tbtn big" data-k="gas">Gas</button>
+    </div>
+  </div>
+</div>
+<div class="count" id="count" hidden></div>
+
+<section class="overlay" id="menu">
+  <div class="card">
+    <h1>HFB <span>Racing</span></h1>
+    <p class="sub">Three laps against five bots. Pick a course below, or import your own from Blender. Prototype build.</p>
+    <dl>
+      <dt>Steer</dt><dd>Arrow keys or A / D</dd>
+      <dt>Gas / brake</dt><dd>Up / Down or W / S</dd>
+      <dt>Drift</dt><dd>Hold Space in a corner, release for a boost</dd>
+      <dt>Boost pads</dt><dd>Drive over the amber chevrons</dd>
+    </dl>
+    <div class="course" role="group" aria-label="Course">
+      <span class="k">Course</span>
+      <div class="picker" id="picker" role="radiogroup"></div>
+      <p class="blurb" id="coursemsg"></p>
+      <div class="row">
+        <button class="ghost" id="pick" type="button">Import .glb track</button>
+        <span class="note">or drop one anywhere on the page</span>
+      </div>
+      <input type="file" id="file" accept=".glb,.gltf,model/gltf-binary" hidden>
+    </div>
+    <div class="row">
+      <button class="cta" id="go">Start race</button>
+      <button class="ghost big" id="online" type="button" hidden>Race online</button>
+    </div>
+    <p class="note" id="nogl" hidden>This browser could not start WebGL, so the 3D view is unavailable.</p>
+  </div>
+</section>
+
+<section class="overlay" id="join" hidden>
+  <div class="card">
+    <h1>Race <span>online</span></h1>
+    <p class="sub">Race friends in real time. One player creates a room and shares the code; everyone else joins with it. The room lasts while the creator's tab stays open.</p>
+    <label class="k" for="nick">Your name</label>
+    <input class="field" id="nick" maxlength="12" autocomplete="off" placeholder="Racer">
+    <div class="row gap"><button class="cta" id="create" type="button">Create room</button></div>
+    <label class="k" for="code">Or join with a code</label>
+    <div class="row">
+      <input class="field short" id="code" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="ABCDE">
+      <button class="ghost" id="joinbtn" type="button">Join room</button>
+    </div>
+    <p class="note" id="joinmsg"></p>
+    <button class="ghost" id="joinback" type="button">Back</button>
+  </div>
+</section>
+
+<section class="overlay" id="lobby" hidden>
+  <div class="card">
+    <span class="k">Room code</span>
+    <div class="code" id="roomcode">-----</div>
+    <div class="row"><button class="ghost" id="copycode" type="button">Copy code</button><span class="note" id="copymsg"></span></div>
+    <span class="k gap">Players</span>
+    <ul class="players" id="players"></ul>
+    <span class="k">Course</span>
+    <div class="picker" id="lobbypicker"></div>
+    <p class="blurb" id="lobbymsg"></p>
+    <div class="row">
+      <button class="cta" id="startonline" type="button" hidden>Start race</button>
+      <span class="note" id="lobbywait" hidden>Waiting for the host to start...</span>
+      <button class="ghost" id="leave" type="button">Leave room</button>
+    </div>
+  </div>
+</section>
+
+<section class="overlay" id="results" hidden>
+  <div class="card">
+    <h1>Race <span>over</span></h1>
+    <ol id="board"></ol>
+    <div class="row">
+      <button class="cta" id="again">Race again</button>
+      <button class="ghost" id="tolobby" type="button" hidden>Back to lobby</button>
+      <button class="ghost" id="tomenu" type="button">Change course</button>
+    </div>
+    <p class="note" id="waitmsg" hidden>Waiting for the host to start the next race...</p>
+  </div>
+</section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js" integrity="sha384-nlUQ8ZqCbvStErob+biJNzSgltf6urV3VGqhfIfzhmg9RXmpeRm76ELw0pYnKlTR" crossorigin="anonymous"></script>
+<script src="net.js"></script>
+<script src="game.js"></script>
+
+</body>
+</html>
