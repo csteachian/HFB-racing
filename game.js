@@ -142,6 +142,7 @@ function bank(side, color) { // embankment from the outer kerb down to the groun
   group.add(new T.Mesh(g, new T.MeshLambertMaterial({ color, side: T.DoubleSide })));
 }
 function buildCourse(c) {
+  if (c.gltf) { buildImported(c.gltf, c); return; }
   const sc = c.scale || 1; loadedCourse = c.id;
   setCenterline(c.ctrl.map(([x, z, y]) => new T.Vector3(x * sc, (y || 0) * sc, z * sc))); HALF = c.half;
   pts.forEach((p) => { p.y = Math.max(0, p.y); }); // the spline can undershoot 0 slightly; keep the road above the ground
@@ -161,13 +162,14 @@ function buildCourse(c) {
 const nearestIdx = (x, z) => { let b = 1e12, bi = 0; pts.forEach((p, i) => { const q = (p.x - x) ** 2 + (p.z - z) ** 2; if (q < b) { b = q; bi = i; } }); return bi; };
 
 /* Imported course: a mesh named Road*, empties CP, CP.001, CP.002 ... in driving order, optional empties Pad*. */
-function buildImported(gltf) {
+const CP_RE = /^cp[_\-\s]?(\d+)?$/i;
+function buildImported(gltf, meta) { // meta: a course loaded from courses/ (theme, width, id); absent for a hand-imported file
   const root = gltf.scene; root.updateMatrixWorld(true);
   const cps = [], padPos = [], drop = [];
   root.traverse((o) => {
     const nm = o.name || ''; let m;
     if (o.isLight || o.isCamera) drop.push(o);
-    else if (!o.isMesh && (m = /^cp[_\-\s]?(\d+)?$/i.exec(nm))) cps.push({ i: m[1] ? parseInt(m[1], 10) : 0, p: o.getWorldPosition(new T.Vector3()) });
+    else if (!o.isMesh && (m = CP_RE.exec(nm))) cps.push({ i: m[1] ? parseInt(m[1], 10) : 0, p: o.getWorldPosition(new T.Vector3()) });
     else if (!o.isMesh && /^pad/i.test(nm)) padPos.push(o.getWorldPosition(new T.Vector3()));
   });
   if (cps.length < 4) throw new Error(`Found ${cps.length} empties named CP. Add at least 4, in driving order (CP, CP.001, CP.002 ...).`);
@@ -184,9 +186,9 @@ function buildImported(gltf) {
     }
   });
   const near = dists.filter((d) => d < 60).sort((a, b) => a - b);
-  HALF = near.length ? clamp(near[Math.floor(near.length * 0.9)], 3, 40) : 10;
+  HALF = meta && meta.half ? clamp(meta.half, 3, 40) : near.length ? clamp(near[Math.floor(near.length * 0.9)], 3, 40) : 10;
   drop.forEach((o) => o.parent && o.parent.remove(o));
-  applyTheme(COURSES[0]); newGroup(); group.add(root); loadedCourse = 'imported';
+  applyTheme(meta || COURSES[0]); newGroup(); group.add(root); loadedCourse = meta ? meta.id : 'imported';
   padPos.forEach((p) => addPad(p, headingOf(tan[nearestIdx(p.x, p.z)])));
   addStartLine();
   return { points: cps.length, half: HALF, assumed: !near.length };
@@ -375,6 +377,36 @@ $('file').addEventListener('change', (e) => { importFile(e.target.files[0]); e.t
 window.addEventListener('dragover', (e) => e.preventDefault());
 window.addEventListener('drop', (e) => { e.preventDefault(); importFile(e.dataTransfer.files[0]); });
 
+/* ---------- courses from files: courses/courses.json lists .glb tracks that appear next to the built-in ones ---------- */
+const hexNum = (v, dflt) => (typeof v === 'string' && /^#?[0-9a-f]{6}$/i.test(v) ? parseInt(v.replace('#', ''), 16) : dflt);
+function loadCourseFile(m) {
+  return new Promise((resolve) => {
+    const none = () => resolve(null);
+    if (!m || typeof m.file !== 'string' || !/^[\w .-]+\.(glb|gltf)$/i.test(m.file) || m.file.includes('..')) return none();
+    const id = String(m.id || m.file.replace(/\.(glb|gltf)$/i, '')).toLowerCase().replace(/[^a-z0-9-]+/g, '-').slice(0, 24);
+    if (!id || id === 'imported' || COURSES.some((c) => c.id === id)) return none();
+    fetch('courses/' + encodeURIComponent(m.file)).then((res) => (res.ok ? res.arrayBuffer() : Promise.reject(new Error('missing')))).then((buf) => {
+      const data = new Uint8Array(buf)[0] === 0x7b ? new TextDecoder().decode(buf) : buf;
+      new THREE.GLTFLoader().parse(data, '', (gltf) => {
+        let cps = 0; gltf.scene.traverse((o) => { if (!o.isMesh && CP_RE.test(o.name || '')) cps++; });
+        if (cps < 4) { console.warn('courses/' + m.file + ': needs at least 4 empties named CP, CP.001 ...'); return none(); }
+        resolve({ id, name: String(m.name || id).slice(0, 24), blurb: String(m.blurb || `${cps} control points.`).slice(0, 140),
+          sky: hexNum(m.sky, COURSES[0].sky), ground: hexNum(m.ground, COURSES[0].ground), half: Number(m.half) > 0 ? Number(m.half) : 0, gltf });
+      }, () => { console.warn('courses/' + m.file + ' could not be read'); none(); });
+    }).catch(() => { console.warn('courses/' + m.file + ' could not be loaded'); none(); });
+  });
+}
+async function loadCourseFiles() {
+  try {
+    if (!window.fetch && typeof fetch === 'undefined') return;
+    if (!THREE.GLTFLoader || !window.location || !/^https?:$/.test(window.location.protocol)) return; // needs a web server; skipped on file://
+    const res = await fetch('courses/courses.json'); if (!res.ok) return;
+    const list = await res.json(); if (!Array.isArray(list)) return;
+    for (const c of await Promise.all(list.slice(0, 12).map(loadCourseFile))) if (c && !COURSES.some((x) => x.id === c.id)) COURSES.push(c);
+    renderPicker(); refreshLobby();
+  } catch (e) { /* no courses folder: built-in courses only */ }
+}
+
 /* ---------- minimap ---------- */
 const mapEl = $('map'), mctx = mapEl.getContext('2d');
 let mapBase = null, mapCss = 128, mapDpr = 1, mapK = 1, mapCX = 0, mapCZ = 0;
@@ -556,6 +588,7 @@ function goLobby() {
   $('lobby').hidden = false;
 }
 function startOnlineRace(cfg) {
+  if (!builtIn(cfg.course)) { leaveRoom('This room uses a course your browser has not loaded. Reload the page and try again.'); return; }
   if (cfg.course !== loadedCourse && builtIn(cfg.course)) { buildCourse(builtIn(cfg.course)); buildMap(); }
   online.spectating = false; assignOnline(cfg.roster, isHost()); startRace();
 }
@@ -583,7 +616,7 @@ function refreshLobby() {
     b.addEventListener('click', () => hostCourse(c.id)); box.appendChild(b);
   }
   const c = builtIn(shown);
-  $('lobbymsg').textContent = online.spectating ? 'A race is in progress. You will join the next one.' : (c ? c.blurb : '');
+  $('lobbymsg').textContent = online.spectating ? 'A race is in progress. You will join the next one.' : (c ? c.blurb : 'This course has not loaded in your browser. Reload the page.');
 }
 
 function feed(r, a) {
@@ -756,7 +789,7 @@ function updateHud() {
   drawMap();
 }
 let last = performance.now();
-assignSolo(); buildCourse(COURSES[0]); resetRacers(); buildMap(); renderPicker(); describe(); probeRoom();
+assignSolo(); buildCourse(COURSES[0]); resetRacers(); buildMap(); renderPicker(); describe(); probeRoom(); loadCourseFiles();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now; tNow = now;
   update(dt); updateCamera(dt); updateHud();

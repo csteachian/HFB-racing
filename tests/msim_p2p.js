@@ -1,14 +1,20 @@
 // Multi-client headless test of the PeerJS transport: real game.js + real net.js over a fake PeerJS network with latency.
 // Usage: node msim_p2p.js <game.js> <net.js>
-const fs = require('fs');
+const fs = require('fs'), path = require('path');
 const THREE = require('./node_modules/three/build/three.js');
 globalThis.THREE = THREE;
 new Function(fs.readFileSync('./node_modules/three/examples/js/loaders/GLTFLoader.js', 'utf8'))();
 THREE.WebGLRenderer = class { setPixelRatio() {} setSize() {} render() {} };
 
 let src = fs.readFileSync(process.argv[2], 'utf8');
-src = src.replace('requestAnimationFrame(frame);\n})();', 'window.__dbg = { racers, player, online, COLORS, ranking, leaveRoom, get state() { return state; }, get loadedCourse() { return loadedCourse; }, get N() { return N; }, get pts() { return pts; }, get raceT() { return raceT; } };\nrequestAnimationFrame(frame);\n})();');
+src = src.replace('requestAnimationFrame(frame);\n})();', 'window.__dbg = { COURSES, get trackLen() { return trackLen; }, racers, player, online, COLORS, ranking, leaveRoom, get state() { return state; }, get loadedCourse() { return loadedCourse; }, get N() { return N; }, get pts() { return pts; }, get raceT() { return raceT; } };\nrequestAnimationFrame(frame);\n})();');
 src = src.replace('const readInput = () => ({', 'const readInput = () => window.__inp ? window.__inp() : ({');
+const cdir = path.join(path.dirname(path.resolve(process.argv[2])), 'courses');
+globalThis.fetch = async (url) => {
+  const name = decodeURIComponent(url.replace(/^courses\//, '')), f = path.join(cdir, name);
+  if (!fs.existsSync(f)) return { ok: false };
+  const b = fs.readFileSync(f); return { ok: true, json: async () => JSON.parse(b.toString()), arrayBuffer: async () => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) };
+};
 const GAME = new Function('window', 'document', 'THREE', 'requestAnimationFrame', src);
 const NETSRC = fs.readFileSync(process.argv[3], 'utf8');
 const NET = new Function('window', 'Peer', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', NETSRC);
@@ -77,11 +83,11 @@ class FakeConn {
   close() { if (!this.open && !this.other) return; this.open = false; const o = this.other; at(LAT, () => { if (o && o.open) { o.open = false; o.emit('close'); } }); }
 }
 
-function makeInstance(who, label) {
+function makeInstance(who, label, proto = 'http:') {
   const els = new Proxy({}, { get: (t, k) => t[k] || (t[k] = el()) }), handlers = {}; let raf = null;
   const document = { getElementById: (id) => els[id], createElement: () => el(), querySelectorAll: () => [], addEventListener() {}, hidden: false };
   const Peer = makePeerClass(label);
-  const window = { innerWidth: 800, innerHeight: 600, devicePixelRatio: 1, Peer,
+  const window = { innerWidth: 800, innerHeight: 600, devicePixelRatio: 1, Peer, location: { protocol: proto },
     addEventListener(t, f) { (handlers[t] = handlers[t] || []).push(f); } };
   NET(window, Peer, vSetTimeout, vClear, vSetInterval, vClear, vDate);
   GAME(window, document, THREE, (f) => { raf = f; });
@@ -120,7 +126,8 @@ const frames = (n) => { for (let i = 0; i < n; i++) tick(); };
 (async () => {
   const A = makeInstance('Alice', 'k7x'), B = makeInstance('Bob', 'a3q'), C = makeInstance('Cara', 'm9z'), D = makeInstance('Dana', 'z1d');
   all.push(A, B, C, D);
-  frames(6); await sleep(5); frames(2);
+  frames(6); await sleep(300); frames(2);
+  check('all players loaded the course from courses/', [A, B, C, D].every((I) => I.D.COURSES.some((c) => c.id === 'lakeside')), A.D.COURSES.map((c) => c.id).join(','));
   check('Race online button shows when PeerJS is present', [A, B, C, D].every((I) => I.els.online.hidden === false));
   const bare = { addEventListener() {} }; const noPeerNet = new Function('window', 'Peer', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', NETSRC);
   noPeerNet(bare, undefined, vSetTimeout, vClear, vSetInterval, vClear, vDate);
@@ -165,6 +172,12 @@ const frames = (n) => { for (let i = 0; i < n; i++) tick(); };
   // the promises above resolve only while time passes
   await runUntil(() => takenCode !== '', 600, 'taken id result', 1);
   check('creating a room with a code that is already in use is refused', takenCode === 'taken', takenCode);
+
+  // ---- a course loaded from courses/ works in the online lobby too
+  A.els.lobbypicker.children.find((b) => b.textContent === 'Lakeside Sprint').h.click();
+  await runUntil(() => [A, B, C].every((I) => I.D.loadedCourse === 'lakeside'), 600, 'lakeside sync');
+  check('host picking a file-based course loads the same track for everyone', new Set([A, B, C].map((I) => I.D.trackLen.toFixed(1))).size === 1 && A.D.N > 300, 'N=' + A.D.N + ' len=' + A.D.trackLen.toFixed(0));
+  check('lobby text shows that course\'s description', /Lakeside|flowing/.test(B.els.lobbymsg.textContent), B.els.lobbymsg.textContent);
 
   // ---- course sync + start
   const pick = A.els.lobbypicker.children.find((b) => b.textContent === 'Harbour Hairpins'); pick.h.click();
@@ -241,6 +254,22 @@ const frames = (n) => { for (let i = 0; i < n; i++) tick(); };
   const t0 = now;
   await runUntil(() => C.D.state === 'menu', 60 * 30, 'silent host detected');
   check('a host that stops responding is dropped after about 12 s', C.D.online.on === false && now - t0 > 11000 && now - t0 < 18000, `${((now - t0) / 1000).toFixed(1)} s`);
+  A.D.leaveRoom();
+
+  // ---- a player whose browser could not load the course file is sent back to the menu with an explanation
+  const E = makeInstance('Eve', 'e5e', 'file:'); all.push(E); frames(10); await sleep(20);
+  check('opened from a file:// address, courses/ is skipped quietly and built-in courses still work', E.D.COURSES.length === 3);
+  A.els.nick.value = 'Alice'; A.els.create.h.click();
+  await runUntil(() => A.D.state === 'lobby', 800, 'room 3', 2);
+  const code3 = A.els.roomcode.textContent;
+  E.els.nick.value = 'Eve'; E.els.code.value = code3; E.els.joinbtn.h.click();
+  await runUntil(() => E.D.state === 'lobby' && A.els.players.children.length === 2, 1500, 'Eve joins', 2);
+  A.els.lobbypicker.children.find((b) => b.textContent === 'Lakeside Sprint').h.click();
+  await runUntil(() => /not loaded/.test(E.els.lobbymsg.textContent), 600, 'Eve told the course is missing');
+  check('lobby tells that player the course has not loaded', true, E.els.lobbymsg.textContent);
+  A.els.startonline.h.click();
+  await runUntil(() => E.D.state === 'menu', 600, 'Eve returned to menu');
+  check('starting a race on a course she lacks returns her to the menu with a message', E.D.online.on === false && /not loaded/.test(E.els.coursemsg.textContent), E.els.coursemsg.textContent);
   A.D.leaveRoom();
 
   console.log(failed ? `\nRESULT: FAIL (${failed} checks)` : '\nRESULT: PASS');

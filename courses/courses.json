@@ -1,0 +1,10 @@
+[
+  {
+    "id": "lakeside",
+    "file": "lakeside-sprint.glb",
+    "name": "Lakeside Sprint",
+    "blurb": "A flat, flowing circuit with a tight kink through the middle. Example course.",
+    "sky": "#5b86b0",
+    "ground": "#4f7a4a"
+  }
+]

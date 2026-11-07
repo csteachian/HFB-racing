@@ -8,11 +8,23 @@ THREE.WebGLRenderer = class { setPixelRatio() {} setSize() {} render() {} };
 const handlers = {}, els = {};
 const calls = {};
 const ctx = new Proxy({}, { get: (_, k) => (...a) => { calls[k] = (calls[k] || 0) + 1; }, set: () => true });
-const mk = () => ({ hidden: false, textContent: '', style: {}, className: '', dataset: {}, disabled: false, width: 0, height: 0,
-  classList: { toggle() {} }, appendChild() {}, setAttribute() {}, click() {}, getContext: () => ctx,
-  addEventListener(t, f) { (this.h = this.h || {})[t] = f; } });
+const mk = () => { const o = { hidden: false, style: {}, className: '', dataset: {}, disabled: false, width: 0, height: 0, children: [], _t: '',
+  classList: { toggle() {} }, appendChild(c) { this.children.push(c); }, setAttribute() {}, click() {}, getContext: () => ctx,
+  addEventListener(t, f) { (this.h = this.h || {})[t] = f; } };
+  Object.defineProperty(o, 'textContent', { get() { return this._t; }, set(v) { this._t = v; if (v === '') this.children = []; } }); return o; };
 globalThis.document = { getElementById: (id) => els[id] || (els[id] = mk()), createElement: () => mk(), querySelectorAll: () => [], addEventListener() {}, hidden: false };
-globalThis.window = { get AudioContext() { return globalThis.AudioContext; }, innerWidth: 800, innerHeight: 600, devicePixelRatio: 1, addEventListener(t, f) { (handlers[t] = handlers[t] || []).push(f); } };
+// courses/ folder served by a fake fetch: the real manifest plus deliberately broken entries
+const cdir = path.join(path.dirname(path.resolve(process.argv[2])), 'courses'), hasCourses = fs.existsSync(path.join(cdir, 'courses.json'));
+const fetched = [];
+globalThis.fetch = async (url) => {
+  fetched.push(url); const name = decodeURIComponent(url.replace(/^courses\//, ''));
+  const body = (b) => ({ ok: true, json: async () => JSON.parse(b.toString()), arrayBuffer: async () => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) });
+  if (name === 'courses.json') { const list = JSON.parse(fs.readFileSync(path.join(cdir, 'courses.json'))); list.push({ file: '../game.js' }, { file: 'missing.glb' }, { file: 'nocp.glb', name: 'No CP' }, { file: 'garbage.glb' }, { id: 'kerb', file: 'lakeside-sprint.glb' }, 'nonsense', { file: 'lakeside-sprint.glb', id: 'lakeside' }); return body(Buffer.from(JSON.stringify(list))); }
+  if (name === 'nocp.glb' && process.argv[4]) return body(fs.readFileSync(process.argv[4]));
+  if (name === 'garbage.glb') return body(Buffer.from([1, 2, 3, 4]));
+  const f = path.join(cdir, name); return fs.existsSync(f) ? body(fs.readFileSync(f)) : { ok: false };
+};
+globalThis.window = { location: { protocol: 'http:' }, get AudioContext() { return globalThis.AudioContext; }, innerWidth: 800, innerHeight: 600, devicePixelRatio: 1, addEventListener(t, f) { (handlers[t] = handlers[t] || []).push(f); } };
 
 const audioLog = { ctx: 0, osc: 0, freqSets: [], gainMax: 0 };
 const param = (n) => ({ value: 0, setTargetAtTime(v) { if (n === 'f') audioLog.freqSets.push(v); if (n === 'g') audioLog.gainMax = Math.max(audioLog.gainMax, v); } });
@@ -76,6 +88,14 @@ function geometry(label) {
 }
 (async () => {
   tick(5);
+  if (hasCourses) {
+    await new Promise((r) => setTimeout(r, 600)); tick(2);
+    const ids = D.COURSES.map((c) => c.id).join(',');
+    console.log('courses after loading courses/ :', ids, '| picker buttons:', els.picker.children.length);
+    const okLoad = /^kerb,harbour,ridge,lakeside$/.test(ids) && els.picker.children.length === 4 && !fetched.some((u) => u.includes('..'));
+    console.log(okLoad ? 'PASS  courses/ folder: good course added, broken/duplicate/escaping entries ignored' : 'FAIL  courses/ folder loading');
+    if (!okLoad) process.exitCode = 1;
+  }
   let ok = true;
   for (const c of D.COURSES) {
     D.selectCourse(c.id);
@@ -103,5 +123,5 @@ function geometry(label) {
   }
   console.log(`audio: contexts=${audioLog.ctx} oscillators=${audioLog.osc} (expect 12 = 6 karts x 2) freq updates=${audioLog.freqSets.length} max gain=${audioLog.gainMax.toFixed(3)}`);
   ok = ok && audioLog.ctx === 1 && audioLog.osc === 12 && audioLog.freqSets.length > 1000 && audioLog.gainMax > 0.01;
-  console.log(ok ? 'RESULT: PASS' : 'RESULT: FAIL');
+  console.log(ok && !process.exitCode ? 'RESULT: PASS' : 'RESULT: FAIL');
 })();

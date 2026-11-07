@@ -37,6 +37,30 @@ It uses [PeerJS](https://peerjs.com) (WebRTC):
 - If PeerJS fails to load, the **Race online** button stays hidden and the rest of the game works normally.
 - The room creator is the referee. Other players can only change their own name and kart position; they cannot start races or change courses.
 
+## Adding courses
+
+Drop a Blender `.glb` into `courses/` and add one entry to `courses/courses.json`:
+
+```json
+{
+  "id": "lakeside",
+  "file": "lakeside-sprint.glb",
+  "name": "Lakeside Sprint",
+  "blurb": "One line shown under the course name.",
+  "sky": "#5b86b0",
+  "ground": "#4f7a4a",
+  "half": 9
+}
+```
+
+Only `file` is required. `id` is a short unique name, `sky` and `ground` are colours, and `half` is half the road width in metres (leave it out to measure it from the `Road` mesh). The course then shows up in the picker and in the online lobby, and everyone in a room loads the same file. Reload the page after changing the folder.
+
+- `courses/lakeside-sprint.glb` is a working example. `tools/make_course_example.py` is the script that made it: edit its `CPS` list to reshape the track, run `python3 tools/make_course_example.py courses/my-track.glb`, and add it to the manifest.
+- Courses load only when the game is served over http(s). Opening `index.html` straight from disk shows the built-in courses only.
+- A bad entry (missing file, unreadable file, fewer than 4 `CP` empties, duplicate id) is skipped and a note goes to the browser console.
+- Players in an online room need the same courses. If someone's browser could not load the room's course they are returned to the menu with a message.
+- Built-in courses are drawn with kerbs, trees and embankments; file courses show exactly the mesh you made, so give your road mesh whatever look you want.
+
 ## Your own tracks (Blender)
 
 1. In Blender open the **Scripting** tab and run `tools/make_kart_track.py`. It makes a `Road` mesh and numbered `CP` empties along it.
@@ -53,8 +77,10 @@ It uses [PeerJS](https://peerjs.com) (WebRTC):
 | `index.html` | Page, styles and menus |
 | `game.js` | The game: courses, physics, bots, minimap, sound, online flow |
 | `net.js` | PeerJS room adapter used for online racing |
-| `tools/make_kart_track.py` | Blender helper script |
-| `examples/` | Sample track |
+| `courses/` | Course files and the `courses.json` list |
+| `tools/make_kart_track.py` | Blender helper script that sets up a track |
+| `tools/make_course_example.py` | Generates the example course from a list of points |
+| `examples/` | Sample track to try with the import button |
 | `tests/` | Headless regression tests (see below) |
 
 Libraries are loaded from public CDNs: three.js r128 and PeerJS 1.5.4 (both MIT licensed). Add your own `LICENSE` file for the game itself.
@@ -66,7 +92,7 @@ The tests run the real game code in Node with a stubbed browser, plus a simulate
 ```
 cd tests
 npm install
-node sim.js ../game.js ../examples/hillside-loop.glb nocp-test.glb   # courses, import, stopping, audio
+node sim.js ../game.js ../examples/hillside-loop.glb nocp-test.glb   # courses, courses/ folder, import, stopping, audio
 node msim_p2p.js ../game.js ../net.js                                                 # online racing over PeerJS
 ```
 
