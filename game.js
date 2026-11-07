@@ -2,6 +2,8 @@
 'use strict';
 const T = THREE;
 const LAPS = 3;
+const FAR = 25; // metres beyond the road edge where the player counts as off course
+const GATES = 14; // checkpoints around the lap; gate 0 is the start line
 let N = 300, HALF = 10, GRID_STEP = 4;
 const $ = (id) => document.getElementById(id);
 const angDiff = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -224,25 +226,32 @@ function resetRacers() {
   racers.forEach((r, k) => {
     const slot = (online.on && r.e !== undefined) ? r.e : SLOT[k], row = slot >> 1, i = N - GRID_STEP * (row + 1), s = slot % 2 ? side : -side;
     r.x = pts[i].x + nrm[i].x * s; r.z = pts[i].z + nrm[i].z * s; r.y = pts[i].y; r.h = headingOf(tan[i]);
-    Object.assign(r, { speed: 0, steer: 0, boost: 0, drift: 0, idx: i, dist: Math.abs(s), laps: -1, finished: false, finishT: 0, cc: r.base, drifting: false, gone: false, srcA: null, tAt: undefined });
+    Object.assign(r, { gate: GATES - 1, speed: 0, steer: 0, boost: 0, drift: 0, idx: i, dist: Math.abs(s), laps: -1, finished: false, finishT: 0, cc: r.base, drifting: false, gone: false, srcA: null, tAt: undefined });
   });
 }
 function locate(r) {
   let best = 1e12, bi = r.idx;
-  for (let d = -12; d <= 12; d++) {
+  // Progress can only move a few points per frame (a kart covers about one point per frame at top speed), so it cannot
+  // run ahead of a kart that has cut across the infield; checkLost() then notices the gap.
+  for (let d = -3; d <= 3; d++) {
     const k = (r.idx + d + N) % N, dx = r.x - pts[k].x, dz = r.z - pts[k].z, q = dx * dx + dz * dz;
     if (q < best) { best = q; bi = k; }
   }
   const old = r.idx; r.idx = bi; r.dist = Math.sqrt(best);
+  if (r === player) { // the player's laps are counted by checkpoints (see checkLost); only a backwards crossing is handled here
+    if (old < N * 0.25 && bi > N * 0.75) { r.laps--; r.gate = GATES - 1; }
+    return;
+  }
   if (old > N * 0.75 && bi < N * 0.25) {
     r.laps++;
-    if (r === player) lapCrossed();
-    if (r.laps >= LAPS && !r.finished) { r.finished = true; r.finishT = raceT; if (r === player) playerFinished(); }
+    if (r.laps >= LAPS && !r.finished) { r.finished = true; r.finishT = raceT; }
   } else if (old < N * 0.25 && bi > N * 0.75) r.laps--;
 }
 const progress = (r) => r.laps * N + r.idx;
 const ranking = () => racers.slice().sort((a, b) => (b.finished - a.finished) || (a.finished ? a.finishT - b.finishT : progress(b) - progress(a)));
 
+// How quickly speed falls back to normal after a boost ends: seconds are roughly ln(6)/rate. Lower rate = longer, gentler fade.
+const FALLOFF_BASE = 5, FALLOFF_RATE = 1.1;
 function step(r, inp, dt) {
   if (r.finished) { inp = { steer: 0, gas: false, brake: false, drift: false }; r.speed = Math.max(0, r.speed - 26 * dt); r.boost = 0; r.drift = 0; }
   const off = r.dist > HALF + 1.2;
@@ -250,11 +259,14 @@ function step(r, inp, dt) {
   const boosting = r.boost > 0;
   if (boosting) { vmax = 58; r.boost -= dt; }
   else if (off) vmax *= 0.5;
-  if (r.dist > HALF + 25) vmax = Math.min(vmax, 9);
-  if (inp.gas) r.speed += (boosting ? 70 : 26) * dt;
+  if (r.dist > HALF + FAR) vmax = Math.min(vmax, 9); // far from the road you are crawling; see checkLost()
+  if (inp.gas) { if (r.speed < vmax) r.speed = Math.min(vmax, r.speed + (boosting ? 70 : 26) * dt); } // no acceleration above the limit, so a boost can fade out smoothly
   else if (inp.brake) r.speed -= (r.speed > 0 ? 55 : 20) * dt;
   else r.speed -= Math.sign(r.speed) * Math.min(Math.abs(r.speed), 10 * dt);
-  if (r.speed > vmax) r.speed -= Math.min(r.speed - vmax, 45 * dt);
+  if (r.speed > vmax) { // boost fade-out on the road is gradual; grass still bites quickly
+    const over = r.speed - vmax;
+    r.speed -= Math.min(over, (off ? 45 : FALLOFF_BASE + over * FALLOFF_RATE) * dt);
+  }
   r.speed = Math.max(r.speed, -10);
   r.steer += (inp.steer - r.steer) * Math.min(1, 9 * dt);
   const drifting = inp.drift && r.speed > 16 && Math.abs(r.steer) > 0.25;
@@ -317,8 +329,30 @@ function showResults() {
   renderBoard(); resultButtons(); boardT = 0.5;
   $('hud').hidden = true; $('results').hidden = false; state = 'done';
 }
+let lostT = 0, missed = false; // lostT: seconds the player has been off course or past a missed checkpoint
+const gateIdx = (k) => Math.round((k * N) / GATES) % N;
+function checkLost(dt) {
+  // The player must pass every checkpoint in order, within the road width plus a margin. A kart that cuts across the
+  // infield (or is far from the road) is warned, then put back on the last checkpoint it really passed.
+  const p = player;
+  if (p.finished) { lostT = 0; missed = false; return; }
+  const next = (p.gate + 1) % GATES, gi = gateIdx(next), ahead = ((p.idx - gi + N + N / 2) % N) - N / 2; // signed gap along the track
+  if (!missed && Math.abs(ahead) <= 3 && p.dist <= HALF + 10) {
+    p.gate = next;
+    if (next === 0) { // start line: a lap is done
+      p.laps++; lapCrossed();
+      if (p.laps >= LAPS && !p.finished) { p.finished = true; p.finishT = raceT; playerFinished(); }
+    }
+  } else if (!missed && ahead > 6 && ahead < N / GATES) missed = true;
+  if (!(missed || p.dist > HALF + FAR)) { lostT = 0; return; }
+  lostT += dt;
+  if (lostT < 1.6) return;
+  const g = gateIdx(p.gate);
+  Object.assign(p, { x: pts[g].x, z: pts[g].z, y: pts[g].y, h: headingOf(tan[g]), speed: 10, steer: 0, boost: 0, drift: 0, dist: 0, idx: g, drifting: false });
+  camH = p.h; lostT = 0; missed = false;
+}
 function startRace() {
-  resetRacers(); raceT = 0; lapStart = 0; best = Infinity; endTimer = 0; $('best').textContent = '--';
+  resetRacers(); lostT = 0; missed = false; raceT = 0; lapStart = 0; best = Infinity; endTimer = 0; $('best').textContent = '--';
   camH = player.h; cd = 3; state = 'count';
   $('menu').hidden = true; $('results').hidden = true; $('lobby').hidden = true; $('join').hidden = true; $('hud').hidden = false;
 }
@@ -751,6 +785,7 @@ function update(dt) {
       if (r.kind === 'remote') continue;
       for (const p of pads) if ((r.x - p.x) ** 2 + (r.z - p.z) ** 2 < 16) r.boost = Math.max(r.boost, 0.9);
       locate(r);
+      if (r === player && state === 'race') checkLost(dt);
     }
   } else if (online.on) { for (const r of racers) if (r.kind === 'remote') smoothRemote(r, dt); }
   for (const r of racers) {
@@ -786,6 +821,7 @@ function updateHud() {
   $('spd').textContent = String(Math.round(Math.abs(player.speed) * 3));
   const bar = $('driftbar'); bar.style.width = `${clamp(player.drift / 1.8, 0, 1) * 100}%`; bar.className = player.drift > 0.9 ? 'ready' : '';
   $('flag').hidden = !(player.boost > 0);
+  $('warn').hidden = !(lostT > 0 && state === 'race');
   drawMap();
 }
 let last = performance.now();

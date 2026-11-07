@@ -45,6 +45,9 @@ body{
 .meter{width:150px;height:6px;border-radius:3px;background:var(--line);margin:6px auto 0;overflow:hidden}
 .meter i{display:block;height:100%;width:0;background:var(--ink-dim)}
 .meter i.ready{background:var(--accent)}
+.warn{position:fixed;left:50%;top:26%;transform:translateX(-50%);text-align:center;pointer-events:none;width:max-content;max-width:calc(100vw - 32px)}
+.warn b{display:block;font:700 clamp(30px,7vw,52px)/1 var(--display);letter-spacing:.08em;color:var(--alert);text-shadow:0 3px 0 rgba(0,0,0,.4)}
+.warn span{display:block;margin-top:6px;font:600 14px/1.2 var(--body);letter-spacing:.1em;text-transform:uppercase;color:var(--ink)}
 .flag{font:700 18px/1 var(--display);letter-spacing:.2em;color:var(--accent);margin-top:6px}
 .count{
   position:fixed;inset:0;display:grid;place-items:center;pointer-events:none;
@@ -128,6 +131,7 @@ dd{margin:0}
     </div>
   </div>
   <button class="ghost snd" id="snd" type="button" tabindex="-1">Sound on</button>
+  <div class="warn" id="warn" role="status" hidden><b>MISSED CHECKPOINT</b><span>Heading back to the track</span></div>
   <canvas class="map" id="map" aria-label="Map of the course showing every kart"></canvas>
   <div class="speed">
     <div><b id="spd">0</b><small>km/h</small></div>

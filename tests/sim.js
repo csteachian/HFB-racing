@@ -35,7 +35,7 @@ globalThis.AudioContext = class { constructor() { audioLog.ctx++; this.state = '
 let raf = null; globalThis.requestAnimationFrame = (f) => { raf = f; };
 
 let src = fs.readFileSync(process.argv[2], 'utf8');
-src = src.replace('requestAnimationFrame(frame);\n})();', 'globalThis.__dbg = { racers, player, get N() { return N; }, get HALF() { return HALF; }, get state() { return state; }, get pts() { return pts; }, get pads() { return pads; }, get raceT() { return raceT; }, selectCourse, COURSES, get trackLen() { return trackLen; } };\nrequestAnimationFrame(frame);\n})();');
+src = src.replace('requestAnimationFrame(frame);\n})();', 'globalThis.__dbg = { racers, player, get N() { return N; }, get HALF() { return HALF; }, get state() { return state; }, get pts() { return pts; }, get pads() { return pads; }, get raceT() { return raceT; }, selectCourse, COURSES, step, get lostT() { return lostT; }, get trackLen() { return trackLen; } };\nrequestAnimationFrame(frame);\n})();');
 src = src.replace('const readInput = () => ({', 'const readInput = () => globalThis.__inp ? globalThis.__inp() : ({');
 new Function(src)();
 const D = globalThis.__dbg;
@@ -52,14 +52,14 @@ globalThis.__inp = () => {
 const window_ev = (t) => (handlers[t] || []).forEach((f) => f({ code: 'x', target: {} }));
 function race(label) {
   window_ev('pointerdown'); els.go.h.click({}); tick(60 * 3 + 30);                       // countdown
-  let guard = 0, minSp = 0; while (D.state !== 'done' && guard++ < 60 * 400) { tick(1); for (const r of D.racers) if (r.finished) minSp = Math.min(minSp, r.speed); }
+  let guard = 0, minSp = 0, warnSeen = 0; while (D.state !== 'done' && guard++ < 60 * 400) { tick(1); if (els.warn.hidden === false) warnSeen++; for (const r of D.racers) if (r.finished) minSp = Math.min(minSp, r.speed); }
   tick(60 * 6); for (const r of D.racers) minSp = Math.min(minSp, r.speed);
-  const stopped = D.racers.every((r) => !r.finished || r.speed === 0); console.log(`  finished karts: min speed ${minSp.toFixed(2)}, all stopped=${stopped}`);
+  const stopped = D.racers.every((r) => !r.finished || r.speed === 0); console.log(`  finished karts: min speed ${minSp.toFixed(2)}, all stopped=${stopped}; false 'missed checkpoint' warnings during a clean lap: ${warnSeen}`);
   const lines = D.racers.map((r) => `${r.name.padEnd(7)} laps=${r.laps} finished=${r.finished} t=${r.finishT.toFixed(1)}s`);
   console.log(`[${label}] N=${D.N} half=${D.HALF.toFixed(1)} pads=${D.pads.length} state=${D.state} t=${D.raceT.toFixed(1)}s\n  ` + lines.join('\n  '));
   console.log('  best lap HUD:', els.best.textContent);
   // pass = player finished 3 laps and every bot is on lap 3 (bots run a little slower than a perfect player by design)
-  return D.player.finished && D.racers.every((r) => r.laps >= 2) && minSp >= 0 && stopped;
+  return D.player.finished && D.racers.every((r) => r.laps >= 2) && minSp >= 0 && stopped && warnSeen === 0;
 }
 
 
@@ -107,6 +107,39 @@ function geometry(label) {
   const tagDraws = 6; // the six name tags also clear their own small canvas once at startup
   console.log(`minimap: ${calls.clearRect - tagDraws} frames drawn, ${calls.arc} bot dots (expect 5 per frame = ${(calls.clearRect - tagDraws) * 5})`);
   ok = ok && calls.arc === (calls.clearRect - tagDraws) * 5;
+  // ---- boost fade-out, grass, and the off-course ("missed checkpoint") rule
+  {
+    D.selectCourse('harbour'); tick(5);
+    const fake = () => ({ speed: 58, boost: 0, dist: 0, kind: 'local', cc: 1, steer: 0, drift: 0, finished: false, x: 0, z: 0, h: 0 });
+    const gas = { steer: 0, gas: true, brake: false, drift: false };
+    let r = fake(), n = 0, prev = 58, maxStep = 0; while (r.speed > 40.05 && n < 900) { D.step(r, gas, 1 / 60); maxStep = Math.max(maxStep, prev - r.speed); prev = r.speed; n++; }
+    console.log(`boost fade (gas held): 58 -> 40 m/s in ${(n / 60).toFixed(2)} s, steepest ${(maxStep * 60).toFixed(0)} m/s^2 (was 0.4-1 s, 45 m/s^2)`);
+    const fadeOk = n / 60 > 1.1 && n / 60 < 2.2 && maxStep * 60 < 30;
+    r = fake(); r.speed = 40; r.dist = D.HALF + 5; n = 0; while (r.speed > 20.5 && n < 900) { D.step(r, gas, 1 / 60); n++; }
+    console.log(`grass: 40 m/s -> ${r.speed.toFixed(1)} m/s (${(r.speed * 3).toFixed(0)} km/h) in ${(n / 60).toFixed(2)} s`);
+    const grassOk = n / 60 < 0.8 && r.speed > 19.9;
+    r = fake(); r.speed = 5; n = 0; while (r.speed < 39.9 && n < 900) { D.step(r, gas, 1 / 60); n++; }
+    console.log(`acceleration 5 -> 40 m/s: ${(n / 60).toFixed(2)} s, top speed ${r.speed.toFixed(1)}`);
+    const accOk = Math.abs(r.speed - 40) < 0.2 && n / 60 > 1.2 && n / 60 < 1.6;
+    // cutting across the infield, or skipping ahead on the road: not rewarded, warned, then put back at the last checkpoint passed
+    els.go.h.click({}); tick(60 * 3 + 30); tick(60 * 3);
+    const cases = [['across to the far side of the course', 0.5], ['skipping a quarter lap ahead on the road', 0.25]]; let casesOk = true;
+    for (const [what, frac] of cases) {
+      const idx0 = D.player.idx, laps0 = D.player.laps, far = D.pts[(idx0 + Math.floor(D.N * frac)) % D.N];
+      Object.assign(D.player, { x: far.x, z: far.z, speed: 30 }); tick(30);
+      const warned = els.warn.hidden === false; tick(60 * 2 + 30);
+      const back = D.player.idx - idx0 >= -3 && D.player.idx - idx0 < 40 && D.player.dist < 12 && els.warn.hidden === true && D.lostT === 0 && D.player.laps === laps0;
+      console.log(`${what}: warning shown=${warned}, put back near the start of the cut (idx ${idx0} -> ${D.player.idx}, laps ${laps0} -> ${D.player.laps}) = ${back}`);
+      casesOk = casesOk && warned && back; tick(60);
+    }
+    let guard = 0; while (D.state !== 'done' && guard++ < 60 * 400) tick(1);
+    const finished = D.player.finished && D.player.laps >= 3;
+    console.log('  the race can still be finished afterwards:', finished);
+    els.tomenu.h.click(); tick(5);
+    const mechOk = fadeOk && grassOk && accOk && casesOk && finished && els.warn.hidden === true;
+    console.log(mechOk ? 'PASS  boost fade, grass, acceleration and off-course rule' : 'FAIL  boost fade / grass / off-course rule');
+    if (!mechOk) process.exitCode = 1;
+  }
   if (process.argv[3]) {
     const load = (p) => { const b = fs.readFileSync(p); return { name: path.basename(p), arrayBuffer: async () => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) }; };
     handlers.drop[0]({ preventDefault() {}, dataTransfer: { files: [load(process.argv[3])] } });

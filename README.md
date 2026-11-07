@@ -24,6 +24,12 @@ then visit http://localhost:8000.
 
 Pages serves over HTTPS, which online racing needs.
 
+## Rules worth knowing
+
+- **Checkpoints:** laps only count if you pass every checkpoint in order, within the road width plus a small margin. Cutting across the infield or skipping ahead shows MISSED CHECKPOINT and puts you back on the last checkpoint you really passed after about 1.5 seconds. Staying more than 25 m off the road does the same, and you crawl at 27 km/h until then.
+- **Grass** limits you to about 60 km/h.
+- **Boost** fades out over about 1.5 seconds. To tune it, change `FALLOFF_BASE` and `FALLOFF_RATE` just above `step()` in `game.js` (lower numbers give a longer fade). The number of checkpoints is `GATES` near the top of `game.js`.
+
 ## Online racing
 
 Click **Race online**, enter a name, then either **Create room** (you get a 5-letter code) or join with a friend's code. Up to 6 players; empty places are filled by bots run on the host's computer.
