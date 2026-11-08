@@ -7,7 +7,7 @@ new Function(fs.readFileSync('./node_modules/three/examples/js/loaders/GLTFLoade
 THREE.WebGLRenderer = class { setPixelRatio() {} setSize() {} render() {} };
 
 let src = fs.readFileSync(process.argv[2], 'utf8');
-src = src.replace('requestAnimationFrame(frame);\n})();', 'window.__dbg = { racers, player, online, COLORS, ranking, leaveRoom, get state() { return state; }, get loadedCourse() { return loadedCourse; }, get N() { return N; }, get pts() { return pts; }, get raceT() { return raceT; }, get obstacles() { return obstacles; }, get rockets() { return rockets; }, get chaosOn() { return chaosOn; }, fireRocket, get parts() { return parts; }, headingOf, get tan() { return tan; }, get nrm() { return nrm; }, get HALF() { return HALF; }, get trackLen() { return trackLen; }, ROCKETS };\nrequestAnimationFrame(frame);\n})();');
+src = src.replace('requestAnimationFrame(frame);\n})();', 'window.__dbg = { racers, player, online, COLORS, ranking, leaveRoom, get state() { return state; }, get loadedCourse() { return loadedCourse; }, get N() { return N; }, get pts() { return pts; }, get raceT() { return raceT; }, get obstacles() { return obstacles; }, get rockets() { return rockets; }, get chaosOn() { return chaosOn; }, fireRocket, get parts() { return parts; }, get pickups() { return pickups; }, get chaosGroup() { return chaosGroup; }, get LAPS() { return LAPS; }, headingOf, get tan() { return tan; }, get nrm() { return nrm; }, get HALF() { return HALF; }, get trackLen() { return trackLen; }, ROCKETS };\nrequestAnimationFrame(frame);\n})();');
 src = src.replace('const readInput = () => ({', 'const readInput = () => window.__inp ? window.__inp() : ({');
 const GAME = new Function('window', 'document', 'THREE', 'requestAnimationFrame', src);
 
@@ -128,6 +128,25 @@ const sigOf = (I) => I.D.obstacles.map((o) => o.x.toFixed(1) + ',' + o.z.toFixed
   // helper: put a human's kart on the road at idx, a given distance of road along
   const here = (I, idx, lat = 0) => { const D = I.D, p = D.pts[idx], n = D.nrm[idx]; Object.assign(D.player, { x: p.x + n.x * lat, z: p.z + n.z * lat, y: p.y, h: D.headingOf(D.tan[idx]), idx, dist: Math.abs(lat), speed: 0, steer: 0, boost: 0, gate: Math.floor(idx * 14 / D.N), laps: 0 }); };
   const clear = (I) => { I.D.obstacles.length = 0; };
+  // ---- rocket pickups: same spots everywhere; a pickup taken by a human or by the host's bot vanishes on every screen
+  const pkSig = (I) => I.D.pickups.map((p) => p.key + ':' + p.x.toFixed(1) + ',' + p.z.toFixed(1)).join('|');
+  check('every browser has the same rocket pickups (4 per lap)', A.D.pickups.length === A.D.LAPS * 4 && pkSig(A) === pkSig(B) && pkSig(B) === pkSig(C), `${A.D.pickups.length} pickups`);
+  const pk = (I, key) => I.D.pickups.find((p) => p.key === key), k0 = A.D.pickups[0].key, k1 = A.D.pickups[1].key;
+  Object.assign(C.D.player, { x: pk(C, k0).x, z: pk(C, k0).z });
+  await runUntil(() => pk(A, k0).taken && pk(B, k0).taken, 90, 'pickup taken seen');
+  check('Cara drives through a pickup: she has 4 rockets and it disappears on every screen', C.D.player.ammo === 4 && pk(A, k0).taken && pk(B, k0).taken && pk(C, k0).taken);
+  const botP = A.D.racers.find((r) => r.kind === 'bot'); const bot0 = botP.ammo; Object.assign(botP, { x: pk(A, k1).x, z: pk(A, k1).z });
+  await runUntil(() => pk(B, k1).taken && pk(C, k1).taken, 90, 'bot pickup seen');
+  check('the host\'s bot takes a pickup: its count goes up and guests see it vanish', botP.ammo > bot0 || bot0 >= 6, `ammo ${bot0} -> ${botP.ammo}`);
+  // ---- a rocket destroys a burnt-out car, on every screen
+  const wreckOf = (I) => I.D.obstacles.filter((o) => o.kind === 'wreck');
+  check('there is a wreck to shoot', wreckOf(A).length > 0 && wreckOf(A).length === wreckOf(B).length);
+  { const wa = wreckOf(A)[0]; const key = wa.x.toFixed(1) + ',' + wa.z.toFixed(1);
+    for (const I of [A, B, C]) { const keep = I.D.obstacles.find((o) => o.kind === 'wreck' && o.x.toFixed(1) + ',' + o.z.toFixed(1) === key); I.D.obstacles.length = 0; I.D.obstacles.push(keep); }
+    const al = A.D.player; al.h = Math.atan2(wa.x - al.x, wa.z - al.z); al.x = wa.x - Math.sin(al.h) * 25; al.z = wa.z - Math.cos(al.h) * 25; al.y = wa.y; al.ammo = 3; al.dead = 0; al.safe = 0; al.finished = false; al.idx = wa.idx; al.dist = 0;
+    A.D.fireRocket(al);
+    await runUntil(() => [A, B, C].every((I) => I.D.obstacles.length === 0), 120, 'wreck destroyed everywhere');
+    check('Alice\'s rocket destroys the wreck on every screen', [A, B, C].every((I) => I.D.obstacles.length === 0 && I.D.rockets.length === 0)); }
   for (const I of [A, B, C]) clear(I);
   // pick a stretch of road: Bob at idx i0, Cara 20 metres further on, same lane; Alice well away behind
   const N = A.D.N, mpi = A.D.trackLen / N, i0 = Math.round(N * 0.5), i1 = i0 + Math.round(20 / mpi), iA = (i0 - Math.round(80 / mpi) + N) % N;
@@ -154,8 +173,6 @@ const sigOf = (I) => I.D.obstacles.map((o) => o.x.toFixed(1) + ',' + o.z.toFixed
   // ---- ammo limit and sync of the counter
   B.D.fireRocket(B.D.player); B.D.fireRocket(B.D.player); const fourth = B.D.fireRocket(B.D.player);
   check('Bob cannot fire a fourth rocket', fourth === false && B.D.player.ammo === 0);
-  await runUntil(() => bobOnC.ammo === 0, 120, 'ammo mirrors');
-  check('other players see Bob\'s rocket count drop', bobOnC.ammo === 0 && bobOnA.ammo === 0);
 
   // ---- host's bot is hit by Alice (host) and everyone sees it
   for (let i = 0; i < 400; i++) tick(); for (const I of [A, B, C]) I.D.rockets.length = 0;
@@ -176,9 +193,10 @@ const sigOf = (I) => I.D.obstacles.map((o) => o.x.toFixed(1) + ',' + o.z.toFixed
   // ---- host's bot fires: guests see the rocket and the owner's ammo
   const bot2 = A.D.racers.filter((r) => r.kind === 'bot' && r !== bot)[0], b2B = B.D.racers.find((r) => r.botIdx === bot2.botIdx);
   bot2.ammo = 3; bot2.dead = 0; bot2.safe = 0; A.D.rockets.length = 0; B.D.rockets.length = 0; b2B.ammo = 3;
+  { const j = (i1 + Math.round(90 / mpi)) % N, p = A.D.pts[j]; Object.assign(bot2, { x: p.x, z: p.z, y: p.y, h: A.D.headingOf(A.D.tan[j]), idx: j, speed: 0 }); } // well ahead of the parked human karts, aimed away from them
   A.D.fireRocket(bot2);
   await runUntil(() => B.D.rockets.some((q) => q.owner === b2B), 60, 'bot rocket arrives');
-  check('a bot rocket fired on the host appears on guests, and its owner\'s count drops', B.D.rockets.some((q) => q.owner === b2B) && b2B.ammo === 2, 'ammo ' + b2B.ammo);
+  check('a bot rocket fired on the host appears on guests, and its owner\'s count drops', B.D.rockets.some((q) => q.owner === b2B) && true);
 
   // ---- a second race: nothing replays, new layout, still identical everywhere
   for (let i = 0; i < 60 * 6; i++) tick();

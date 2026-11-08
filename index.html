@@ -37,11 +37,13 @@ body{
 .k{display:block;font:600 10px/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim)}
 .v{display:block;font:700 25px/1.05 var(--display);font-variant-numeric:tabular-nums;white-space:nowrap}
 .speed{
-  position:fixed;left:50%;transform:translateX(-50%);pointer-events:none;text-align:center;
-  bottom:calc(18px + env(safe-area-inset-bottom,0px));
+  position:fixed;left:50%;top:72%;transform:translateX(-50%);pointer-events:none;text-align:center;
+  text-shadow:0 2px 0 rgba(0,0,0,.6),0 0 8px rgba(0,0,0,.45); /* JS moves it to sit just under the player's kart */
 }
 .speed b{font:700 44px/1 var(--display);font-variant-numeric:tabular-nums}
 .speed small{font:600 11px/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim);margin-left:4px}
+.stat.pulse{animation:pulse .6s ease-out}
+@keyframes pulse{0%{transform:scale(1.3);border-color:var(--accent)}100%{transform:none}}
 .meter{width:150px;height:6px;border-radius:3px;background:var(--line);margin:6px auto 0;overflow:hidden}
 .meter i{display:block;height:100%;width:0;background:var(--ink-dim)}
 .meter i.ready{background:var(--accent)}
@@ -55,7 +57,8 @@ body{
 }
 .touch{display:none}
 @media (pointer:coarse){
-  .speed{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
+  .speed b{font-size:34px}
+  .speed .meter{width:100px}
   .touch{
     display:flex;justify-content:space-between;align-items:flex-end;position:fixed;left:0;right:0;bottom:0;
     padding:0 max(16px,env(safe-area-inset-right,0px)) calc(16px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));
@@ -142,7 +145,7 @@ dd{margin:0}
   <div class="warn" id="boom" role="status" hidden><b>DESTROYED</b><span id="boomt"></span></div>
   <div class="warn" id="warn" role="status" hidden><b id="warnt">MISSED CHECKPOINT</b><span>Heading back to the track</span></div>
   <canvas class="map" id="map" aria-label="Map of the course showing every kart"></canvas>
-  <div class="speed">
+  <div class="speed" id="speedo">
     <div><b id="spd">0</b><small>km/h</small></div>
     <div class="meter" title="Drift charge"><i id="driftbar"></i></div>
     <div class="flag" id="flag" hidden>BOOST</div>
@@ -180,7 +183,7 @@ dd{margin:0}
       <button class="cta" id="go">Normal race</button>
       <button class="cta chaos" id="gochaos">Chaos race</button>
     </div>
-    <p class="note">Chaos adds rocks, barrels, ice blocks and burnt-out cars that block the road, and every car carries three rockets.</p>
+    <p class="note">Chaos adds rocks, barrels, ice blocks and burnt-out cars that block the road. Every car carries three rockets, and more rocket pickups appear on each lap.</p>
     <div class="row gap"><button class="ghost big" id="online" type="button" hidden>Race online</button></div>
     <span class="k gap">Controls</span>
     <dl>
@@ -249,8 +252,8 @@ dd{margin:0}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js" integrity="sha384-nlUQ8ZqCbvStErob+biJNzSgltf6urV3VGqhfIfzhmg9RXmpeRm76ELw0pYnKlTR" crossorigin="anonymous"></script>
-<script src="net.js?v=2026.11.08-b"></script>
-<script src="game.js?v=2026.11.08-b"></script>
+<script src="net.js?v=2026.11.08-c"></script>
+<script src="game.js?v=2026.11.08-c"></script>
 
 </body>
 </html>

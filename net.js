@@ -39,7 +39,7 @@
     if (typeof p.ver === 'string') out.ver = p.ver.slice(0, 24);
     if (typeof p.nick === 'string') out.nick = p.nick.replace(/[^\p{L}\p{N} _.-]/gu, '').trim().slice(0, 12);
     if (Array.isArray(p.s) && p.s.length <= 12 && p.s.every((x) => typeof x === 'number' && isFinite(x))) out.s = p.s;
-    for (const k of ['f', 'x']) if (Array.isArray(p[k]) && p[k].length >= 5 && p[k].length <= 8 && p[k].every((v) => typeof v === 'number' && isFinite(v))) out[k] = p[k]; // rocket fired / my kart was hit (chaos races)
+    for (const k of ['f', 'x', 'c']) if (Array.isArray(p[k]) && p[k].length >= 2 && p[k].length <= 8 && p[k].every((v) => typeof v === 'number' && isFinite(v))) out[k] = p[k]; // rocket fired / my kart was hit / I took a pickup (chaos races)
     return out;
   }
 

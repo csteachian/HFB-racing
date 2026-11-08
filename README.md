@@ -14,7 +14,7 @@ python3 -m http.server 8000
 
 then visit http://localhost:8000.
 
-**Controls:** arrow keys or WASD to drive, Space or Shift to drift (release in a corner for a boost), M to mute, R to respawn, F to fire a rocket (Chaos race only). Pick a course from the dropdown on the menu. On phones and tablets there are on-screen buttons.
+**Controls:** arrow keys or WASD to drive (the speedometer sits just under your kart), Space or Shift to drift (release in a corner for a boost), M to mute, R to respawn, F to fire a rocket (Chaos race only). Pick a course from the dropdown on the menu. On phones and tablets there are on-screen buttons.
 
 ## Put it online with GitHub Pages
 
@@ -33,11 +33,12 @@ Kerb Circuit, Harbour Hairpins and Ridgeback are short (about 1 km, 3 laps). Pin
 The menu has two start buttons. **Normal race** is the plain race. **Chaos race** adds:
 
 - **Obstacles** placed at random along the road: rocks, groups of barrels, blocks of ice and smouldering burnt-out cars. They are solid walls. Hitting one head-on takes most of your speed and swings you round it; a glancing hit costs little. The layout is random each race, and there is always room to get past (at least 5.5 m on every stretch). Bots steer around them, and back out if they get wedged.
-- **Rockets:** every car carries three per race (press **F**, or the Fire button). A rocket flies in a straight line along the car's heading at 324 km/h until it has been off the course for 5 seconds, then disappears. It explodes on rocks, barrels, ice and wrecks. A car it hits explodes, stays out for 3 seconds, then comes back on the road centre close to where it blew up, protected from rockets for 1.5 seconds. Cars that have finished the race cannot be hit. Bots fire too: while they still have rockets they line up behind the nearest car ahead.
+- **Rocket pickups:** four appear on every lap, one in each quarter of the lap at a random spot on the road (a floating rocket in an amber ring). The first car to drive through one takes it and gains a rocket; bots go for them too. You can carry at most 6. Each lap has its own four, and you only see and can collect the ones for the lap you are on.
+- **Rockets:** every car starts with three per race (press **F**, or the Fire button). A rocket flies in a straight line along the car's heading at 324 km/h until it has been off the course for 5 seconds, then disappears. It explodes on rocks, barrels and ice, and it blows burnt-out cars apart: the wreck is removed (leaving a scorch mark), so the gap it blocked is open for everyone. A car it hits explodes, stays out for 3 seconds, then comes back on the road centre close to where it blew up, protected from rockets for 1.5 seconds. Cars that have finished the race cannot be hit. Bots fire too: while they still have rockets they line up behind the nearest car ahead.
 
 Online, the host picks the mode in the lobby. Everyone gets the same obstacles (the host sends a random seed). Each player's own browser decides whether its car was hit, and tells the others.
 
-The numbers are constants at the top of the *chaos mode* section of `game.js`: `ROCKETS`, `ROCKET_SPEED`, `ROCKET_OFF_SECS`, `BLAST_SECS`, `SAFE_SECS`, and `ROCKETS_STOPPED_BY_OBSTACLES` (set it to `false` to let rockets fly straight through obstacles). The obstacle spacing is in `buildObstacles()`.
+The numbers are constants at the top of the *chaos mode* section of `game.js`: `ROCKETS`, `MAX_CARRY`, `PICKUPS_PER_LAP`, `ROCKET_SPEED`, `ROCKET_OFF_SECS`, `BLAST_SECS`, `SAFE_SECS`, and `ROCKETS_STOPPED_BY_OBSTACLES` (set it to `false` to let rockets fly straight through rocks, barrels and ice; wrecks still blow up). The obstacle spacing is in `buildObstacles()`.
 
 ## Sounds
 
