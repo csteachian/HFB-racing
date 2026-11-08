@@ -97,6 +97,7 @@ label.k{display:block}
 .tagpill{font:600 11px/1.6 var(--body);letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
 .snd{position:fixed;left:max(16px,env(safe-area-inset-left,0px));top:calc(66px + env(safe-area-inset-top,0px));background:var(--panel);padding:7px 10px;font-size:12px;pointer-events:auto}
 .rsp{top:calc(106px + env(safe-area-inset-top,0px))}
+.fireb{top:calc(146px + env(safe-area-inset-top,0px));border-color:var(--alert);color:var(--alert)}
 .map{position:fixed;right:max(16px,env(safe-area-inset-right,0px));top:calc(66px + env(safe-area-inset-top,0px));background:var(--panel);border:1px solid var(--line);border-radius:8px;pointer-events:none}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .ghost{background:transparent;color:var(--ink);border:1px solid var(--ink-dim);border-radius:6px;padding:9px 13px;font:600 14px/1 var(--body);cursor:pointer}
@@ -111,6 +112,7 @@ dd{margin:0}
   background:var(--accent);color:var(--accent-ink);border:0;border-radius:6px;padding:12px 28px;
   font:700 26px/1 var(--display);letter-spacing:.06em;text-transform:uppercase;cursor:pointer;
 }
+.cta.chaos{background:var(--alert);color:#1a0604}
 .cta:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 .note{margin:12px 0 0;font-size:12px;color:var(--ink-dim)}
 #board{list-style:none;margin:12px 0 18px;padding:0;display:grid;gap:4px}
@@ -127,6 +129,7 @@ dd{margin:0}
     <div class="group">
       <div class="stat"><span class="k">Lap</span><span class="v" id="lap">1/3</span></div>
       <div class="stat"><span class="k">Position</span><span class="v" id="pos">6/6</span></div>
+      <div class="stat" id="ammochip" hidden><span class="k">Rockets</span><span class="v" id="ammo">3</span></div>
     </div>
     <div class="group">
       <div class="stat"><span class="k">Time</span><span class="v" id="time">0:00.00</span></div>
@@ -135,6 +138,8 @@ dd{margin:0}
   </div>
   <button class="ghost snd" id="snd" type="button" tabindex="-1">Sound on</button>
   <button class="ghost snd rsp" id="rsp" type="button" tabindex="-1">Respawn (R)</button>
+  <button class="ghost snd fireb" id="fire" type="button" tabindex="-1" hidden>Fire (F)</button>
+  <div class="warn" id="boom" role="status" hidden><b>DESTROYED</b><span id="boomt"></span></div>
   <div class="warn" id="warn" role="status" hidden><b id="warnt">MISSED CHECKPOINT</b><span>Heading back to the track</span></div>
   <canvas class="map" id="map" aria-label="Map of the course showing every kart"></canvas>
   <div class="speed">
@@ -148,6 +153,7 @@ dd{margin:0}
       <button class="tbtn" data-k="right" aria-label="Steer right">&#9654;</button>
     </div>
     <div class="cluster">
+      <button class="tbtn sm" id="firebtn" data-k="fire" hidden>Fire</button>
       <button class="tbtn sm" data-k="brake">Brake</button>
       <button class="tbtn sm" data-k="drift">Drift</button>
       <button class="tbtn big" data-k="gas">Gas</button>
@@ -160,13 +166,6 @@ dd{margin:0}
   <div class="card">
     <h1>HFB <span>Racing</span></h1>
     <p class="sub">Race five bots over two or three laps. Pick a course below, or import your own from Blender. Prototype build.</p>
-    <dl>
-      <dt>Steer</dt><dd>Arrow keys or A / D</dd>
-      <dt>Gas / brake</dt><dd>Up / Down or W / S</dd>
-      <dt>Drift</dt><dd>Hold Space in a corner, release for a boost</dd>
-      <dt>Respawn</dt><dd>R, to go back to your last checkpoint</dd>
-      <dt>Boost pads</dt><dd>Drive over the amber chevrons</dd>
-    </dl>
     <div class="course" role="group" aria-label="Course">
       <span class="k">Course</span>
       <select class="field sel" id="picker" aria-label="Course"></select>
@@ -178,9 +177,20 @@ dd{margin:0}
       <input type="file" id="file" accept=".glb,.gltf,model/gltf-binary" hidden>
     </div>
     <div class="row">
-      <button class="cta" id="go">Start race</button>
-      <button class="ghost big" id="online" type="button" hidden>Race online</button>
+      <button class="cta" id="go">Normal race</button>
+      <button class="cta chaos" id="gochaos">Chaos race</button>
     </div>
+    <p class="note">Chaos adds rocks, barrels, ice blocks and burnt-out cars that block the road, and every car carries three rockets.</p>
+    <div class="row gap"><button class="ghost big" id="online" type="button" hidden>Race online</button></div>
+    <span class="k gap">Controls</span>
+    <dl>
+      <dt>Steer</dt><dd>Arrow keys or A / D</dd>
+      <dt>Gas / brake</dt><dd>Up / Down or W / S</dd>
+      <dt>Drift</dt><dd>Hold Space in a corner, release for a boost</dd>
+      <dt>Respawn</dt><dd>R, to go back to your last checkpoint</dd>
+      <dt>Fire</dt><dd>F in a Chaos race: three rockets each</dd>
+      <dt>Boost pads</dt><dd>Drive over the amber chevrons</dd>
+    </dl>
     <p class="note" id="nogl" hidden>This browser could not start WebGL, so the 3D view is unavailable.</p>
     <p class="note" id="ver"></p>
   </div>
@@ -210,6 +220,8 @@ dd{margin:0}
     <div class="row"><button class="ghost" id="copycode" type="button">Copy code</button><span class="note" id="copymsg"></span></div>
     <span class="k gap">Players</span>
     <ul class="players" id="players"></ul>
+    <span class="k">Game mode</span>
+    <select class="field sel" id="lobbymode" aria-label="Game mode"><option value="0">Normal race</option><option value="1">Chaos race (obstacles and rockets)</option></select>
     <span class="k">Course</span>
     <select class="field sel" id="lobbypicker" aria-label="Course"></select>
     <p class="blurb" id="lobbymsg"></p>
@@ -237,8 +249,8 @@ dd{margin:0}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js" integrity="sha384-nlUQ8ZqCbvStErob+biJNzSgltf6urV3VGqhfIfzhmg9RXmpeRm76ELw0pYnKlTR" crossorigin="anonymous"></script>
-<script src="net.js?v=2026.11.08-a"></script>
-<script src="game.js?v=2026.11.08-a"></script>
+<script src="net.js?v=2026.11.08-b"></script>
+<script src="game.js?v=2026.11.08-b"></script>
 
 </body>
 </html>

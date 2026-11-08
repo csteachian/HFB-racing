@@ -2,7 +2,7 @@
 'use strict';
 const T = THREE;
 let LAPS = 3; // per course: a course can set `laps`
-const VERSION = '2026.11.08-a'; // shown on the menu and compared between players in an online lobby
+const VERSION = '2026.11.08-b'; // shown on the menu and compared between players in an online lobby
 const FAR = 18; // metres beyond the road edge where the player counts as off course (and crawls)
 const GRASS_MAX = 6; // seconds of continuous grass before the player counts as off course
 const GATES = 14; // checkpoints around the lap; gate 0 is the start line
@@ -77,7 +77,7 @@ const C = (h) => new T.Color(h);
 
 function newGroup() {
   if (group) { scene.remove(group); group.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); }
-  group = new T.Group(); scene.add(group); pads = [];
+  group = new T.Group(); scene.add(group); pads = []; clearChaos();
 }
 function setCenterline(points) {
   const curve = new T.CatmullRomCurve3(points, true, 'catmullrom', 0.5), L = curve.getLength();
@@ -300,7 +300,7 @@ function resetRacers() {
   racers.forEach((r, k) => {
     const slot = (online.on && r.e !== undefined) ? r.e : SLOT[k], row = slot >> 1, i = N - GRID_STEP * (row + 1), s = slot % 2 ? side : -side;
     r.x = pts[i].x + nrm[i].x * s; r.z = pts[i].z + nrm[i].z * s; r.y = pts[i].y; r.h = headingOf(tan[i]);
-    Object.assign(r, { vy: 0, gate: GATES - 1, speed: 0, steer: 0, boost: 0, drift: 0, idx: i, dist: Math.abs(s), laps: -1, finished: false, finishT: 0, cc: r.base, drifting: false, gone: false, srcA: null, tAt: undefined });
+    Object.assign(r, { ammo: ROCKETS, dead: 0, safe: 0, hitBy: '', fireCd: 4 + ((k * 7) % 5), laneNow: undefined, vy: 0, gate: GATES - 1, speed: 0, steer: 0, boost: 0, drift: 0, idx: i, dist: Math.abs(s), laps: -1, finished: false, finishT: 0, cc: r.base, drifting: false, gone: false, srcA: null, tAt: undefined });
   });
 }
 function locate(r) {
@@ -351,10 +351,15 @@ function step(r, inp, dt) {
   r.x += Math.sin(r.h) * r.speed * dt; r.z += Math.cos(r.h) * r.speed * dt;
   r.drifting = drifting;
 }
-function botInput(r) {
-  const k = (r.idx + Math.max(5, Math.round(18 / (trackLen / N)))) % N, lane = clamp(r.lane, -HALF * 0.6, HALF * 0.6);
+function botInput(r, dt) {
+  const k = (r.idx + Math.max(5, Math.round(18 / (trackLen / N)))) % N, lane = chaosOn ? botLane(r, dt) : clamp(r.lane, -HALF * 0.6, HALF * 0.6);
   const tx = pts[k].x + nrm[k].x * lane, tz = pts[k].z + nrm[k].z * lane;
   const diff = angDiff(Math.atan2(tx - r.x, tz - r.z) - r.h);
+  if (chaosOn) { // wedged against something: back out for a moment, then try again
+    if (r.recov > 0) { r.recov -= dt; return { steer: clamp(-diff * 2.2, -1, 1), gas: false, brake: true, drift: false }; }
+    r.stuck = Math.abs(r.speed) < 2 && raceT > 3 && !r.finished ? (r.stuck || 0) + dt : 0;
+    if (r.stuck > 1.3) { r.recov = 1.0; r.stuck = 0; }
+  }
   r.cc = r.base + clamp((progress(player) - progress(r)) * 0.0007, -0.05, 0.05); // gentle catch-up
   return { steer: clamp(diff * 2.2, -1, 1), gas: Math.abs(diff) < 0.55 || r.speed < 18, brake: Math.abs(diff) > 0.85 && r.speed > 22, drift: false };
 }
@@ -412,7 +417,7 @@ function respawnAtGate(p) { // back to the last checkpoint really passed, facing
 }
 let lastRespawn = -1e9;
 function respawnKey() { // the player's own Respawn key / button
-  if (state !== 'race' || player.finished || tNow - lastRespawn < 800) return;
+  if (state !== 'race' || player.finished || player.dead > 0 || tNow - lastRespawn < 800) return;
   lastRespawn = tNow; respawnAtGate(player);
 }
 function checkLost(dt) {
@@ -436,15 +441,19 @@ function checkLost(dt) {
   if (lostT >= 1.6) respawnAtGate(p);
 }
 function startRace() {
-  resetRacers(); lostT = 0; missed = false; grassT = 0; raceT = 0; lapStart = 0; best = Infinity; endTimer = 0; $('best').textContent = '--';
+  resetRacers(); if (chaosOn) buildObstacles(chaosSeed); else clearChaos();
+  if (online.on) markSeen(); else { outbox = {}; botFireLog = []; botBlastLog = []; botEvDirty = false; }
+  fireHeld = false; shake = 0; $('ammochip').hidden = !chaosOn; $('firebtn').hidden = !chaosOn; $('fire').hidden = !chaosOn;
+  lostT = 0; missed = false; grassT = 0; raceT = 0; lapStart = 0; best = Infinity; endTimer = 0; $('best').textContent = '--';
   camH = player.h; cd = 3; state = 'count';
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // so the keys drive the kart, not a focused menu control
   $('menu').hidden = true; $('results').hidden = true; $('lobby').hidden = true; $('join').hidden = true; $('hud').hidden = false;
 }
-$('go').addEventListener('click', startRace);
-$('again').addEventListener('click', () => (online.on ? hostStart('live') : startRace()));
+$('go').addEventListener('click', () => { chaosOn = false; startRace(); });
+$('gochaos').addEventListener('click', () => { chaosOn = true; chaosSeed = uid(); startRace(); });
+$('again').addEventListener('click', () => { if (online.on) { hostStart('live'); return; } if (chaosOn) chaosSeed = uid(); startRace(); });
 $('tomenu').addEventListener('click', () => { if (online.on) { leaveRoom(); return; } $('results').hidden = true; $('menu').hidden = false; state = 'menu'; resetRacers(); });
-window.addEventListener('keydown', (e) => { if (e.code === 'Enter' && !online.on && !(e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) && (state === 'menu' || state === 'done')) startRace(); });
+window.addEventListener('keydown', (e) => { if (e.code === 'Enter' && !online.on && !(e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) && (state === 'menu' || state === 'done')) { if (state === 'menu') chaosOn = false; else if (chaosOn) chaosSeed = uid(); startRace(); } });
 
 /* ---------- course picker and import ---------- */
 let current = 'kerb', imported = null; // imported = { name, data, info }
@@ -643,7 +652,7 @@ async function joinRoom(raw, create) {
     }
     const nick = myNick(); try { localStorage.setItem('hfbracing-nick', nick); } catch (e) { /* storage can be unavailable */ }
     const startCourse = builtIn(loadedCourse) ? loadedCourse : COURSES[0].id;
-    room.presence(create ? { nick, ver: VERSION, creator: true, race: { n: 0, phase: 'lobby', course: startCourse, roster: [] } } : { nick, ver: VERSION });
+    room.presence(create ? { nick, ver: VERSION, creator: true, race: { n: 0, phase: 'lobby', course: startCourse, chaos: false, seed: 0, roster: [] } } : { nick, ver: VERSION });
     for (let i = 0; i < 30 && !room.peers().some((p) => p.isMe); i++) await wait(100);
     if (!create && !p2p) {
       await wait(1400); // others answer over a second or two
@@ -703,22 +712,23 @@ function onSnap(snap) {
   refreshLobby();
 }
 function goLobby() {
-  online.spectating = false; assignSolo(); resetRacers(); state = 'lobby'; endTimer = 0;
+  online.spectating = false; clearChaos(); assignSolo(); resetRacers(); state = 'lobby'; endTimer = 0;
   for (const id of ['results', 'hud', 'count']) $(id).hidden = true;
   $('lobby').hidden = false;
 }
 function startOnlineRace(cfg) {
   if (!builtIn(cfg.course)) { leaveRoom('This room uses a course your browser has not loaded. Reload the page and try again.'); return; }
   if (cfg.course !== loadedCourse && builtIn(cfg.course)) { buildCourse(builtIn(cfg.course)); buildMap(); }
-  online.spectating = false; assignOnline(cfg.roster, isHost()); startRace();
+  online.spectating = false; assignOnline(cfg.roster, isHost()); chaosOn = !!cfg.chaos; chaosSeed = (cfg.seed | 0) || 1; startRace();
 }
 function hostStart(phase) {
   if (!isHost()) return;
   const cfg = online.cfg || {};
   const roster = viewersOf(online.room.peers()).map((p) => p.peer).sort().slice(0, 6);
-  online.room.presence({ race: { n: Math.max(online.seenN, cfg.n || 0) + 1, phase, course: cfg.course || loadedCourse, roster: phase === 'live' ? roster : [] } });
+  online.room.presence({ race: { n: Math.max(online.seenN, cfg.n || 0) + 1, phase, course: cfg.course || loadedCourse, chaos: !!cfg.chaos, seed: phase === 'live' ? uid() : 0, roster: phase === 'live' ? roster : [] } });
 }
 $('lobbypicker').addEventListener('change', (e) => { hostCourse(e.target.value); if (e.target.blur) e.target.blur(); });
+$('lobbymode').addEventListener('change', (e) => { if (isHost()) online.room.presence({ race: Object.assign({}, online.cfg, { chaos: e.target.value === '1' }) }); if (e.target.blur) e.target.blur(); });
 function hostCourse(id) { if (isHost()) online.room.presence({ race: Object.assign({}, online.cfg, { course: id }) }); }
 function refreshLobby() {
   if (state !== 'lobby' || !online.on) return;
@@ -734,9 +744,10 @@ function refreshLobby() {
   const box = $('lobbypicker'), shown = cfg.course || loadedCourse, key = COURSES.length + (host ? 'h' : 'g'); // rebuilt only when the list changes, so an open dropdown is not closed by updates
   if (box.dataset.key !== key) { fillSelect(box, false); box.dataset.key = key; }
   box.disabled = !host; if (box.value !== shown) box.value = shown;
-  const c = builtIn(shown), odd = v.filter((p) => p.presence.ver !== VERSION);
+  const mbox = $('lobbymode'), wantMode = cfg.chaos ? '1' : '0'; mbox.disabled = !host; if (mbox.value !== wantMode) mbox.value = wantMode;
+  const c = builtIn(shown), odd = v.filter((p) => p.presence.nick !== undefined && p.presence.ver !== VERSION); // a player who has just connected has not announced anything yet
   $('lobbymsg').textContent = odd.length ? `Some players run a different version of the game (${odd.map(nickOf).join(', ')}). Everyone should reload the page before racing.`
-    : online.spectating ? 'A race is in progress. You will join the next one.' : (c ? c.blurb : 'This course has not loaded in your browser. Reload the page.');
+    : online.spectating ? 'A race is in progress. You will join the next one.' : (c ? c.blurb + (cfg.chaos ? ' Chaos: obstacles block the road, and everyone has three rockets (F).' : '') : 'This course has not loaded in your browser. Reload the page.');
 }
 
 function feed(r, a) {
@@ -772,7 +783,11 @@ function sendState() {
   if (tNow - online.sentAt < 33) return;
   online.sentAt = tNow;
   const patch = { s: pack(player) };
-  if (isHost()) patch.bots = racers.filter((r) => r.kind === 'bot').sort((a, b) => a.botIdx - b.botIdx).map(pack);
+  if (outbox.f || outbox.x) { Object.assign(patch, outbox); outbox = {}; }
+  if (isHost()) {
+    patch.bots = racers.filter((r) => r.kind === 'bot').sort((a, b) => a.botIdx - b.botIdx).map(pack);
+    if (botEvDirty) { patch.bf = botFireLog.map((e) => e.slice()); patch.bx = botBlastLog.map((e) => e.slice()); botEvDirty = false; }
+  }
   online.room.presence(patch).catch(() => {});
 }
 
@@ -843,7 +858,7 @@ function updateAudio(dt) {
     let v = audio.voices.get(r);
     if (!v) { v = makeVoice(); audio.voices.set(r, v); }
     // every control value is eased in code first, so speed changes, boosts and collisions glide instead of stepping
-    const sp = Math.min(1, Math.abs(r.speed) / 45), live = !r.gone && !quiet, ease = (k) => Math.min(1, k * dt);
+    const sp = Math.min(1, Math.abs(r.speed) / 45), live = !r.gone && !quiet && !(r.dead > 0), ease = (k) => Math.min(1, k * dt);
     v.sp += (sp - v.sp) * ease(5); v.boost += ((r.boost > 0 ? 1 : 0) - v.boost) * ease(4);
     const f = 50 + v.sp * 100 + v.boost * 12;
     const dx = r.x - camera.position.x, dz = r.z - camera.position.z, d = Math.hypot(dx, dz);
@@ -861,27 +876,331 @@ function updateAudio(dt) {
 for (const ev of ['pointerdown', 'keydown']) window.addEventListener(ev, () => ensureAudio(), true);
 $('snd').addEventListener('click', (e) => { toggleSound(); e.currentTarget.blur(); });
 $('rsp').addEventListener('click', (e) => { respawnKey(); e.currentTarget.blur(); });
+$('fire').addEventListener('click', (e) => { if (tNow - lastFireAt > 350) { lastFireAt = tNow; fireRocket(player); } e.currentTarget.blur(); });
 if ($('ver')) $('ver').textContent = 'Version ' + VERSION;
 document.addEventListener('visibilitychange', () => { if (!audio) return; if (document.hidden) audio.ctx.suspend(); else if (soundOn) audio.ctx.resume(); });
+
+/* ---------- chaos mode: obstacles, rockets and explosions ---------- */
+const ROCKETS = 3;                  // rockets each car carries per race
+const ROCKET_SPEED = 90;            // metres per second, straight ahead
+const ROCKET_OFF_SECS = 5;          // a rocket disappears after this long continuously off the course
+const ROCKETS_STOPPED_BY_OBSTACLES = true; // false: rockets fly straight through rocks, barrels, ice and wrecks
+const BLAST_SECS = 3;               // a destroyed car respawns after this long
+const SAFE_SECS = 1.5;              // ...and cannot be hit again for this long
+const LAG_COMP = 0.06;              // seconds a remote player's rocket is advanced to cover network delay
+let chaosOn = false, chaosSeed = 1, fireHeld = false, lastFireAt = -1e9, shake = 0;
+const chaosGroup = new T.Group(); scene.add(chaosGroup);
+let obstacles = [], rockets = [], parts = [], outbox = {}, botFireLog = [], botBlastLog = [], botEvDirty = false;
+const seenEv = new Set();
+const rid = (r) => (r.e !== undefined ? r.e : racers.indexOf(r));
+const uid = () => 1 + Math.floor(Math.random() * 1e9);
+const okNums = (a, min, max) => Array.isArray(a) && a.length >= min && a.length <= max && a.every((v) => typeof v === 'number' && isFinite(v));
+function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+const lam = (c, o) => new T.MeshLambertMaterial(Object.assign({ color: c }, o || {}));
+const OB = {
+  rock: new T.DodecahedronGeometry(1, 0), rockMat: lam(0x737985),
+  barrel: new T.CylinderGeometry(0.6, 0.6, 1.3, 12), band: new T.CylinderGeometry(0.62, 0.62, 0.12, 12), bandMat: lam(0x2a2a30),
+  barrelMats: [0xc23b2a, 0x2f6fb0, 0xd9a520, 0x3f8f4f].map((c) => lam(c)),
+  ice: new T.BoxGeometry(2.3, 1.6, 2.1), iceMat: lam(0xa9e4f7, { emissive: 0x16384a, transparent: true, opacity: 0.88 }),
+  carBody: new T.BoxGeometry(1.9, 0.7, 3.9), carCab: new T.BoxGeometry(1.6, 0.55, 1.8), carWheel: new T.CylinderGeometry(0.42, 0.42, 0.4, 10).rotateZ(Math.PI / 2),
+  patch: new T.BoxGeometry(0.7, 0.1, 0.9), rust: lam(0x4a2b1c), char: lam(0x1b1a19), ember: new T.MeshBasicMaterial({ color: 0xff6a1a }),
+  rocketBody: new T.CylinderGeometry(0.17, 0.17, 1.3, 8).rotateX(Math.PI / 2), rocketNose: new T.ConeGeometry(0.17, 0.5, 8).rotateX(Math.PI / 2),
+  rocketFin: new T.BoxGeometry(0.6, 0.05, 0.3), rocketFlame: new T.ConeGeometry(0.14, 0.7, 6).rotateX(-Math.PI / 2),
+  white: lam(0xe9e9ef), red: lam(0xe04a3a), flame: new T.MeshBasicMaterial({ color: 0xffa93a }),
+};
+const PART = {
+  box: new T.BoxGeometry(1, 1, 1), ball: new T.SphereGeometry(1, 10, 8),
+  fire: new T.MeshBasicMaterial({ color: 0xff6a1a }), hot: new T.MeshBasicMaterial({ color: 0xffd34a }),
+  smoke: new T.MeshBasicMaterial({ color: 0x3b3b42, transparent: true, opacity: 0.42, depthWrite: false }), junk: new T.MeshBasicMaterial({ color: 0x1b1b1f }),
+};
+
+function makeObstacle(kind, rnd) {
+  const g = new T.Group(), part = (geo, mat, x, y, z) => { const m = new T.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); return m; };
+  let r = 1.5;
+  if (kind === 'rock') {
+    const s = 1.0 + rnd() * 0.6, m = part(OB.rock, OB.rockMat, 0, s * 0.55, 0);
+    m.scale.set(s * 1.2, s * 0.85, s); m.rotation.set(rnd() * 0.5, rnd() * 6.28, rnd() * 0.5); r = s * 1.3 + 0.2;
+    const s2 = s * 0.5, m2 = part(OB.rock, OB.rockMat, s * 0.95, s2 * 0.5, s * 0.35); m2.scale.set(s2, s2 * 0.8, s2); m2.rotation.y = rnd() * 6.28;
+  } else if (kind === 'barrels') {
+    const n = 1 + Math.floor(rnd() * 3), at = [[[0, 0]], [[-0.66, 0], [0.66, 0]], [[-0.66, 0.4], [0.66, 0.4], [0, -0.7]]][n - 1], mat = OB.barrelMats[Math.floor(rnd() * OB.barrelMats.length)];
+    for (const [x, z] of at) { part(OB.barrel, mat, x, 0.65, z); part(OB.band, OB.bandMat, x, 0.3, z); part(OB.band, OB.bandMat, x, 1.0, z); }
+    r = [0.85, 1.4, 1.55][n - 1];
+  } else if (kind === 'ice') {
+    part(OB.ice, OB.iceMat, 0, 0.8, 0).rotation.y = rnd() * 6.28;
+    const m = part(OB.ice, OB.iceMat, 1.1, 0.5, 0.9); m.scale.set(0.55, 0.6, 0.55); m.rotation.set(0.2, rnd() * 6.28, 0.25); r = 1.75;
+  } else { // wreck: a burnt-out car with glowing embers
+    part(OB.carBody, OB.rust, 0, 0.6, 0); const cab = part(OB.carCab, OB.char, 0, 1.15, -0.3); cab.rotation.z = 0.08;
+    part(OB.carWheel, OB.char, -1.0, 0.42, 1.2); part(OB.carWheel, OB.char, 1.0, 0.42, -1.2); part(OB.carWheel, OB.char, -1.0, 0.42, -1.2);
+    part(OB.patch, OB.ember, 0.3, 0.98, 1.2); part(OB.patch, OB.ember, -0.4, 0.98, 0.4); part(OB.patch, OB.ember, 0.1, 1.5, -0.4).scale.set(0.6, 1, 0.6);
+    r = 2.15;
+  }
+  if (kind !== 'rock') g.rotation.y = rnd() * 6.28;
+  return { mesh: g, r };
+}
+function clearChaos() {
+  while (chaosGroup.children.length) chaosGroup.remove(chaosGroup.children[0]);
+  obstacles = []; rockets = []; parts = [];
+}
+function buildObstacles(seed) {
+  clearChaos();
+  const rnd = rng(seed), mpi = trackLen / N, kinds = ['rock', 'barrels', 'ice', 'wreck'], pick = () => kinds[Math.floor(rnd() * kinds.length)];
+  const first = Math.ceil(80 / mpi), last = N - Math.ceil(70 / mpi); // none on the grid or just after the start line
+  const put = (kind, ob, i, off) => {
+    const p = pts[i], x = p.x + nrm[i].x * off, z = p.z + nrm[i].z * off;
+    if (pads.some((q) => (q.x - x) ** 2 + (q.z - z) ** 2 < 100)) return; // keep boost pads clear
+    ob.mesh.position.set(x, p.y, z); chaosGroup.add(ob.mesh);
+    obstacles.push({ x, z, y: p.y, r: ob.r, idx: i, off, kind, smokeT: rnd() * 0.3 });
+  };
+  for (let i = first; i < last; i += Math.max(4, Math.round((24 + rnd() * 34) / mpi))) {
+    const ka = pick(), a = makeObstacle(ka, rnd);
+    if (rnd() < 0.22) { // a pair with a gap of at least 6 m between them
+      const kb = pick(), b = makeObstacle(kb, rnd), gap = 6 + rnd() * 2.5, room = 2 * HALF - 0.6 - (2 * a.r + 2 * b.r + gap);
+      if (room > 0) { const s0 = -HALF + 0.3 + a.r + rnd() * room; put(ka, a, i, s0); put(kb, b, i, s0 + a.r + gap + b.r); continue; }
+    }
+    put(ka, a, i, (rnd() * 2 - 1) * Math.max(0, HALF - a.r - 0.3));
+  }
+}
+function hitObstacles(r) { // obstacles are walls: push the kart out and take speed off in proportion to how head-on the hit was
+  for (const o of obstacles) {
+    const dx = r.x - o.x, dz = r.z - o.z, min = o.r + 1.15;
+    if (dx > min || dx < -min || dz > min || dz < -min) continue;
+    const d2 = dx * dx + dz * dz; if (d2 >= min * min) continue;
+    const d = Math.sqrt(d2) || 0.001, nx = dx / d, nz = dz / d;
+    r.x = o.x + nx * min; r.z = o.z + nz * min;
+    const dir = r.speed < 0 ? -1 : 1, into = Math.max(0, -(Math.sin(r.h) * nx + Math.cos(r.h) * nz) * dir), before = Math.abs(r.speed);
+    r.speed *= into > 0.12 ? 1 - 0.85 * into : 0.985;
+    if (into > 0.12) { // glance off: swing the heading towards the way along the obstacle, so a kart slides round it instead of sticking
+      const side = (Math.sin(r.h) * -nz + Math.cos(r.h) * nx) * dir >= 0 ? 1 : -1, ta = Math.atan2(-nz * side, nx * side) + (dir < 0 ? Math.PI : 0);
+      r.h += angDiff(ta - r.h) * Math.min(1, into * 0.6);
+    }
+    if (into > 0.5) { r.boost = 0; r.drift = 0; }
+    if (before - Math.abs(r.speed) > 6 && tNow - (r.thumpAt || -1e9) > 250) { r.thumpAt = tNow; playThump(r); }
+  }
+}
+function botLane(r, dt) { // bots aim for the lane they like, unless an obstacle is in the way: then the nearest free lane
+  const mpi = trackLen / N;
+  let want = clamp(r.lane, -HALF * 0.6, HALF * 0.6);
+  if (r.ammo > 0 && raceT > 3) { // still holding rockets: line up behind the nearest kart ahead
+    let best = 1e9, tgt = null;
+    for (const o of racers) { if (o === r || o.gone || o.dead > 0 || o.safe > 0 || o.finished) continue; const d = ((o.idx - r.idx + N) % N) * mpi; if (d > 10 && d < 70 && d < best) { best = d; tgt = o; } }
+    if (tgt) want = clamp((tgt.x - pts[tgt.idx].x) * nrm[tgt.idx].x + (tgt.z - pts[tgt.idx].z) * nrm[tgt.idx].z, -HALF * 0.75, HALF * 0.75);
+  }
+  let aim = want;
+  if (obstacles.length) {
+    const look = Math.ceil((28 + Math.abs(r.speed) * 1.0) / mpi), near = obstacles.filter((o) => { const d = (o.idx - r.idx + N) % N; return d <= look || d >= N - 2; });
+    const blocked = (l) => near.some((o) => Math.abs(l - o.off) < o.r + 2.4), lim = HALF - 1.0;
+    if (near.length && blocked(want)) {
+      const first = near[0].off > want ? -1 : 1;
+      search: for (let s = 0.5; s <= 2 * lim; s += 0.5) for (const sg of [first, -first]) { const l = want + sg * s; if (Math.abs(l) <= lim && !blocked(l)) { aim = l; break search; } }
+    }
+  }
+  if (r.laneNow === undefined) r.laneNow = want;
+  r.laneNow += (aim - r.laneNow) * Math.min(1, 6 * dt);
+  return r.laneNow;
+}
+function botFire(r, dt) {
+  if (!chaosOn || r.ammo <= 0 || r.dead > 0 || r.finished || raceT < 4) return;
+  r.fireCd -= dt; if (r.fireCd > 0) return;
+  const hx = Math.sin(r.h), hz = Math.cos(r.h);
+  for (const o of racers) {
+    if (o === r || o.gone || o.dead > 0 || o.safe > 0 || o.finished) continue;
+    const dx = o.x - r.x, dz = o.z - r.z, ahead = dx * hx + dz * hz, side = Math.abs(dx * hz - dz * hx);
+    if (ahead < 8 || ahead > 90 || side > 2.3) continue;
+    if (obstacles.some((q) => { const qx = q.x - r.x, qz = q.z - r.z, t = qx * hx + qz * hz; return t > 0 && t < ahead && Math.abs(qx * hz - qz * hx) < q.r + 0.4; })) continue; // blocked
+    if (Math.random() < 3 * dt) { fireRocket(r); r.fireCd = 3 + Math.random() * 5; }
+    return;
+  }
+}
+
+/* rockets */
+function makeRocketMesh() {
+  const g = new T.Group(), add = (geo, mat, x, y, z) => { const m = new T.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); return m; };
+  add(OB.rocketBody, OB.white, 0, 0, 0); add(OB.rocketNose, OB.red, 0, 0, 0.9); add(OB.rocketFin, OB.red, 0, 0, -0.5); add(OB.rocketFin, OB.red, 0, 0, -0.5).rotation.z = Math.PI / 2;
+  add(OB.rocketFlame, OB.flame, 0, 0, -1.0);
+  g.scale.setScalar(1.7);
+  return g;
+}
+function spawnRocket(owner, shot, x, z, y, h, lag) {
+  shot = clamp(Math.floor(shot) || 0, 0, ROCKETS - 1);
+  const id = rid(owner) * ROCKETS + shot;
+  if (rockets.some((q) => q.id === id)) return null;
+  const mesh = makeRocketMesh(); chaosGroup.add(mesh);
+  const rk = { id, owner, x, z, y: y + 0.9, h, dx: Math.sin(h), dz: Math.cos(h), off: 0, age: 0, mesh };
+  if (lag > 0) { rk.x += rk.dx * ROCKET_SPEED * lag; rk.z += rk.dz * ROCKET_SPEED * lag; }
+  mesh.position.set(rk.x, rk.y, rk.z); mesh.rotation.y = h; rockets.push(rk);
+  return rk;
+}
+function removeRocket(rk) { const i = rockets.indexOf(rk); if (i >= 0) { rockets.splice(i, 1); chaosGroup.remove(rk.mesh); } }
+function fireRocket(r) {
+  if (!chaosOn || r.ammo <= 0 || r.dead > 0 || r.finished || state !== 'race') return false;
+  const shot = ROCKETS - r.ammo; r.ammo--;
+  const x = r.x + Math.sin(r.h) * 2.6, z = r.z + Math.cos(r.h) * 2.6;
+  spawnRocket(r, shot, x, z, r.y, r.h, 0);
+  if (online.on) {
+    if (r === player) outbox.f = [uid(), shot, f2(x), f2(z), f2(r.y), f2(r.h)];
+    else if (r.kind === 'bot' && isHost()) { botFireLog.push([uid(), r.botIdx, shot, f2(x), f2(z), f2(r.y), f2(r.h)]); if (botFireLog.length > 6) botFireLog.shift(); botEvDirty = true; }
+  }
+  playLaunch(x, z);
+  return true;
+}
+let nrIdx = 0, nrDist = 0;
+function nearestRoad(x, z) { let b = 1e12, bi = 0; for (let i = 0; i < N; i++) { const dx = pts[i].x - x, dz = pts[i].z - z, q = dx * dx + dz * dz; if (q < b) { b = q; bi = i; } } nrIdx = bi; nrDist = Math.sqrt(b); }
+function updateRockets(dt) {
+  for (let k = rockets.length - 1; k >= 0; k--) {
+    const rk = rockets[k]; rk.age += dt;
+    const n = Math.max(1, Math.ceil((ROCKET_SPEED * dt) / 1.0)), sd = (ROCKET_SPEED * dt) / n;
+    let done = false;
+    for (let s = 0; s < n && !done; s++) {
+      rk.x += rk.dx * sd; rk.z += rk.dz * sd;
+      if (ROCKETS_STOPPED_BY_OBSTACLES) for (const o of obstacles) {
+        const ox = rk.x - o.x, oz = rk.z - o.z;
+        if (ox * ox + oz * oz < (o.r + 0.25) ** 2) { explosionFx(rk.x, rk.y, rk.z, false); done = true; break; }
+      }
+      if (done) break;
+      for (const r of racers) { // only karts this browser simulates can be hit here; remote players report their own hits
+        if (r.kind === 'remote' || r.gone || r.dead > 0 || r.safe > 0 || r.finished || r === rk.owner) continue;
+        if ((r.x - rk.x) ** 2 + (r.z - rk.z) ** 2 < 3.6 && Math.abs(r.y + 0.7 - rk.y) < 2.6) { blowUp(r, rk); done = true; break; }
+      }
+    }
+    if (done) { removeRocket(rk); continue; }
+    nearestRoad(rk.x, rk.z);
+    const out = nrDist - (HALF + 1.4), road = pts[nrIdx].y, ground = out <= 0 ? road : Math.max(0, road - out / bankRun);
+    rk.y += (ground + 0.9 - rk.y) * Math.min(1, 15 * dt);
+    rk.off = nrDist > HALF + 1.2 ? rk.off + dt : 0;
+    if (rk.off >= ROCKET_OFF_SECS || rk.age > 30) { removeRocket(rk); continue; }
+    rk.mesh.position.set(rk.x, rk.y, rk.z);
+    const sx = rk.x - rk.dx * 1.2, sz = rk.z - rk.dz * 1.2;
+    puff('smoke', sx, rk.y, sz, (Math.random() - 0.5) * 1.5, 0.8, (Math.random() - 0.5) * 1.5, 0.3, 0.55, 0);
+    puff('hot', sx, rk.y, sz, 0, 0, 0, 0.32, 0.1, 0);
+    puff('fire', sx - rk.dx * 0.5, rk.y, sz - rk.dz * 0.5, 0, 0, 0, 0.4, 0.14, 0);
+  }
+}
+
+/* destroyed cars */
+function blowUp(r, rk) {
+  explosionFx(r.x, r.y + 0.8, r.z, true);
+  r.dead = BLAST_SECS; r.speed = 0; r.boost = 0; r.drift = 0; r.drifting = false; r.steer = 0;
+  r.hitBy = rk && rk.owner ? rk.owner.name : '';
+  if (online.on && rk) {
+    if (r === player) outbox.x = [uid(), rk.id, f2(r.x), f2(r.z), f2(r.y)];
+    else if (r.kind === 'bot' && isHost()) { botBlastLog.push([uid(), r.botIdx, rk.id, f2(r.x), f2(r.z), f2(r.y)]); if (botBlastLog.length > 6) botBlastLog.shift(); botEvDirty = true; }
+  }
+}
+function remoteBlast(r, rocketId, x, z, y) { // a player (or a bot on the host) says it was hit
+  const rk = rockets.find((q) => q.id === rocketId); if (rk) removeRocket(rk);
+  explosionFx(x, y + 0.8, z, true); r.dead = BLAST_SECS;
+}
+function respawnAfterBlast(r) { // back on the road centre close to where it blew up, stepping back if a obstacle is there
+  let i = r.idx;
+  for (let t = 0; t < 8 && obstacles.some((o) => Math.hypot(o.x - pts[i].x, o.z - pts[i].z) < o.r + 3.4); t++) i = (i - 1 + N) % N;
+  const p = pts[i];
+  Object.assign(r, { x: p.x, z: p.z, y: p.y, vy: 0, h: headingOf(tan[i]), speed: 10, steer: 0, boost: 0, drift: 0, dist: 0, idx: i, drifting: false, safe: SAFE_SECS, dead: 0 });
+  if (r === player) { camH = r.h; lostT = 0; missed = false; grassT = 0; }
+}
+
+/* particles */
+function puff(kind, x, y, z, vx, vy, vz, size, life, g) {
+  if (parts.length > 260) { const old = parts.shift(); chaosGroup.remove(old.m); }
+  const m = new T.Mesh(kind === 'flash' || kind === 'smoke' ? PART.ball : PART.box, kind === 'flash' ? PART.hot : PART[kind]);
+  m.position.set(x, y, z); m.scale.setScalar(size); chaosGroup.add(m);
+  parts.push({ m, vx, vy, vz, size, life, t: 0, g, kind });
+}
+function explosionFx(x, y, z, big) {
+  const n = big ? 30 : 12, sp = big ? 14 : 7;
+  puff('flash', x, y, z, 0, 0, 0, big ? 1.1 : 0.6, 0.3, 0);
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * 6.283, u = Math.random(), s = sp * (0.3 + u * 0.7);
+    puff(i % 3 ? 'fire' : 'hot', x, y, z, Math.cos(a) * s, 2 + Math.random() * sp * 0.6, Math.sin(a) * s, 0.28 + Math.random() * 0.4, 0.45 + Math.random() * 0.45, 9);
+  }
+  if (big) for (let i = 0; i < 10; i++) { const a = Math.random() * 6.283, s = 4 + Math.random() * 10; puff('junk', x, y, z, Math.cos(a) * s * 0.8, 6 + Math.random() * 9, Math.sin(a) * s * 0.8, 0.14 + Math.random() * 0.2, 1.3, 24); }
+  for (let i = 0; i < (big ? 5 : 3); i++) { const a = Math.random() * 6.283; puff('smoke', x, y, z, Math.cos(a) * 2, 2 + Math.random() * 3, Math.sin(a) * 2, 0.6 + Math.random() * 0.5, 1.5 + Math.random(), 0); }
+  const d = Math.hypot(x - camera.position.x, z - camera.position.z);
+  playBlast(big ? 0.9 : 0.5, d);
+  if (big && d < 30) shake = Math.max(shake, 0.6 * (1 - d / 30));
+}
+function updateChaos(dt) {
+  if (shake > 0) shake = Math.max(0, shake - dt * 1.4);
+  updateRockets(dt);
+  for (const o of obstacles) { // wrecks smoulder
+    if (o.kind !== 'wreck') continue;
+    const d = Math.hypot(o.x - camera.position.x, o.z - camera.position.z); if (d > 110) continue;
+    o.smokeT -= dt; if (o.smokeT <= 0) { o.smokeT = 0.18 + Math.random() * 0.15; puff('smoke', o.x + (Math.random() - 0.5), o.y + 1.5, o.z + (Math.random() - 0.5), 0.3, 1.6, 0.2, 0.5, 1.6, 0); }
+  }
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i]; p.t += dt;
+    if (p.t >= p.life) { chaosGroup.remove(p.m); parts.splice(i, 1); continue; }
+    p.vy -= p.g * dt; p.m.position.x += p.vx * dt; p.m.position.y += p.vy * dt; p.m.position.z += p.vz * dt;
+    const u = p.t / p.life;
+    const s = p.kind === 'smoke' ? p.size * (1 + u * 1.6) * (u > 0.7 ? (1 - u) / 0.3 : 1) : p.kind === 'flash' ? p.size * (0.4 + u * 1.9) * (1 - u * u) : p.size * (1 - u);
+    p.m.scale.setScalar(Math.max(0.01, s));
+  }
+}
+function pollChaos() { // rockets and hits reported by other players
+  if (!chaosOn) return;
+  for (const r of racers) {
+    if (r.kind !== 'remote' || !r.label) continue;
+    const p = online.byLabel.get(r.label); if (!p) continue;
+    const f = p.presence.f, x = p.presence.x;
+    if (okNums(f, 6, 8) && !seenEv.has(f[0])) { seenEv.add(f[0]); if (spawnRocket(r, f[1], f[2], f[3], f[4], f[5], LAG_COMP)) { r.ammo = Math.min(r.ammo, ROCKETS - 1 - clamp(Math.floor(f[1]), 0, ROCKETS - 1)); playLaunch(f[2], f[3]); } }
+    if (okNums(x, 5, 8) && !seenEv.has(x[0])) { seenEv.add(x[0]); remoteBlast(r, x[1], x[2], x[3], x[4]); }
+  }
+  const hp = online.hostPeer && online.hostPeer.presence;
+  if (hp && !isHost()) {
+    const bot = (i) => racers.find((q) => q.kind === 'remote' && !q.label && q.botIdx === i);
+    if (Array.isArray(hp.bf)) for (const e of hp.bf) if (okNums(e, 7, 8) && !seenEv.has(e[0])) { seenEv.add(e[0]); const r = bot(e[1]); if (r && spawnRocket(r, e[2], e[3], e[4], e[5], e[6], LAG_COMP)) { r.ammo = Math.min(r.ammo, ROCKETS - 1 - clamp(Math.floor(e[2]), 0, ROCKETS - 1)); playLaunch(e[3], e[4]); } }
+    if (Array.isArray(hp.bx)) for (const e of hp.bx) if (okNums(e, 6, 8) && !seenEv.has(e[0])) { seenEv.add(e[0]); const r = bot(e[1]); if (r) remoteBlast(r, e[2], e[3], e[4], e[5]); }
+  }
+}
+function markSeen() { // events already in the room (from an earlier race) must not replay
+  seenEv.clear();
+  const add = (e) => { if (Array.isArray(e) && typeof e[0] === 'number') seenEv.add(e[0]); };
+  online.byLabel.forEach((p) => { add(p.presence.f); add(p.presence.x); });
+  const hp = online.hostPeer && online.hostPeer.presence;
+  if (hp) { (Array.isArray(hp.bf) ? hp.bf : []).forEach(add); (Array.isArray(hp.bx) ? hp.bx : []).forEach(add); }
+  botFireLog = []; botBlastLog = []; botEvDirty = false; outbox = {};
+}
+
+/* chaos sounds */
+let noiseBuf = null;
+function noise(vol, f0, f1, dur, kind) {
+  if (!audio || !soundOn || vol < 0.02) return;
+  try {
+    const c = audio.ctx, t = c.currentTime;
+    if (!noiseBuf) { noiseBuf = c.createBuffer(1, c.sampleRate, c.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+    const s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+    s.buffer = noiseBuf; s.loop = true; f.type = kind; f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    s.connect(f); f.connect(g); g.connect(audio.master); s.start(t); s.stop(t + dur + 0.05);
+  } catch (e) { /* sound is optional */ }
+}
+const nearVol = (x, z, base) => base / (1 + ((x - camera.position.x) ** 2 + (z - camera.position.z) ** 2) / 1600);
+function playBlast(vol, d) { if (!audio || !soundOn) return; const v = vol / (1 + (d * d) / 1600); noise(v, 2600, 70, 1.1, 'lowpass'); if (v > 0.03) tone(52, 0, 0.7, 'sine', v * 0.9); }
+function playLaunch(x, z) { if (!audio || !soundOn) return; noise(nearVol(x, z, 0.5), 500, 3200, 0.5, 'bandpass'); }
+function playThump(r) { if (!audio || !soundOn) return; const v = r === player ? 0.5 : nearVol(r.x, r.z, 0.4); if (v > 0.03) tone(85, 0, 0.18, 'triangle', v); }
 
 /* ---------- loop ---------- */
 function update(dt) {
   const gridStill = state === 'menu' || state === 'lobby' || state === 'count';
   const inp = state === 'race' ? readInput() : { steer: 0, gas: false, brake: false, drift: false };
+  if (chaosOn && state === 'race') { const f = !!(keys.KeyF || touch.fire); if (f && !fireHeld && !player.finished && tNow - lastFireAt > 350) { lastFireAt = tNow; fireRocket(player); } fireHeld = f; }
   if (state === 'count') {
     cd -= dt; $('count').hidden = false; $('count').textContent = String(Math.max(1, Math.ceil(cd)));
     if (cd <= 0) { state = 'race'; goT = 0.9; $('count').textContent = 'GO'; }
   } else if (goT > 0) { goT -= dt; if (goT <= 0) $('count').hidden = true; }
   if (state === 'race' || state === 'done') raceT += dt;
-  if (online.on) pollRoom();
+  if (online.on) { pollRoom(); pollChaos(); }
   if (!gridStill) {
     for (const r of racers) {
+      if (r.dead > 0) { r.dead -= dt; if (r.kind !== 'remote') { r.speed = 0; if (r.dead <= 0) respawnAfterBlast(r); } else smoothRemote(r, dt); continue; } // wrecked: out for a few seconds
+      if (r.safe > 0) r.safe -= dt;
       if (r.kind === 'remote') { smoothRemote(r, dt); continue; }
-      step(r, r.kind === 'bot' ? botInput(r) : inp, dt);
+      step(r, r.kind === 'bot' ? botInput(r, dt) : inp, dt);
+      if (chaosOn) { hitObstacles(r); if (r.kind === 'bot') botFire(r, dt); }
     }
     for (let i = 0; i < racers.length; i++) for (let j = i + 1; j < racers.length; j++) {
       const a = racers[i], b = racers[j];
-      if (a.gone || b.gone || (a.kind === 'remote' && b.kind === 'remote')) continue;
+      if (a.gone || b.gone || a.dead > 0 || b.dead > 0 || (a.kind === 'remote' && b.kind === 'remote')) continue;
       const dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
       if (d < 2.4 && d > 0.001) {
         const fa = a.kind === 'remote' ? 0 : 1, fb = b.kind === 'remote' ? 0 : 1, push = (2.4 - d) / (fa + fb), nx = dx / d, nz = dz / d;
@@ -892,6 +1211,7 @@ function update(dt) {
     }
     for (const r of racers) {
       if (r.kind === 'remote') continue;
+      if (r.dead > 0) { if (r === player) lostT = 0; continue; }
       for (const p of pads) if ((r.x - p.x) ** 2 + (r.z - p.z) ** 2 < 16) r.boost = Math.max(r.boost, 0.9);
       locate(r);
       if (r === player && state === 'race') checkLost(dt);
@@ -903,10 +1223,11 @@ function update(dt) {
       if (ground < r.y - 0.05) { r.vy = (r.vy || 0) - 30 * dt; r.y += r.vy * dt; if (r.y <= ground) { r.y = ground; r.vy = 0; } }
       else { r.vy = 0; r.y += (ground - r.y) * Math.min(1, 12 * dt); }
     }
-    r.mesh.visible = !r.gone;
+    r.mesh.visible = !r.gone && !(r.dead > 0);
     r.mesh.position.set(r.x, r.y, r.z);
     r.mesh.rotation.y = r.h + (r.drifting ? r.steer * 0.35 : 0);
   }
+  updateChaos(dt);
   if (online.on) sendState();
   updateAudio(dt);
   if (endTimer > 0 && state === 'race') { endTimer -= dt; if (endTimer <= 0) showResults(); }
@@ -922,6 +1243,7 @@ function updateCamera(dt) {
   camH += angDiff(p.h - camH) * Math.min(1, 5 * dt);
   const back = 8.5 + Math.min(Math.max(p.speed, 0), 45) * 0.04;
   camera.position.set(p.x - Math.sin(camH) * back, p.y + 4.4, p.z - Math.cos(camH) * back);
+  if (shake > 0) camera.position.add({ x: (Math.random() - 0.5) * shake * 2, y: (Math.random() - 0.5) * shake * 2, z: (Math.random() - 0.5) * shake * 2 });
   camera.lookAt(p.x + Math.sin(camH) * 6, p.y + 1.6, p.z + Math.cos(camH) * 6);
   const fov = 68 + (p.boost > 0 ? 9 : 0) + Math.min(Math.max(p.speed, 0), 40) * 0.1;
   camera.fov += (fov - camera.fov) * Math.min(1, 6 * dt); camera.updateProjectionMatrix();
@@ -934,6 +1256,8 @@ function updateHud() {
   $('spd').textContent = String(Math.round(Math.abs(player.speed) * 3));
   const bar = $('driftbar'); bar.style.width = `${clamp(player.drift / 1.8, 0, 1) * 100}%`; bar.className = player.drift > 0.9 ? 'ready' : '';
   $('flag').hidden = !(player.boost > 0);
+  $('ammochip').hidden = !chaosOn; if (chaosOn) $('ammo').textContent = String(player.ammo);
+  $('boom').hidden = !(player.dead > 0); if (player.dead > 0) $('boomt').textContent = (player.hitBy ? 'Hit by ' + player.hitBy + '. ' : '') + 'Back in ' + Math.ceil(player.dead);
   $('warn').hidden = !(lostT > 0 && state === 'race'); $('warnt').textContent = lostWhy;
   drawMap();
 }

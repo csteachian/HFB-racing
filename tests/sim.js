@@ -191,8 +191,10 @@ function geometry(label) {
     console.log('after no-CP file:', els.coursemsg.textContent, '| half still', D.HALF.toFixed(1));
   }
   const eng = audioLog.nodes.find((n) => n.type === 'sawtooth'); let maxStep = 0; for (let i = 1; i < eng.log.length; i++) maxStep = Math.max(maxStep, Math.abs(eng.log[i] - eng.log[i - 1]));
-  console.log(`engine pitch of the player's kart: ${eng.log.length} updates, pitch range ${Math.min(...eng.log).toFixed(0)}-${Math.max(...eng.log).toFixed(0)} Hz, largest change between frames ${maxStep.toFixed(2)} Hz (limit 3)`);
-  if (maxStep >= 3) { ok = false; console.log('FAIL  engine pitch is not smooth'); }
+  console.log(`engine pitch of the player's kart: ${eng.log.length} updates, pitch range ${Math.min(...eng.log).toFixed(0)}-${Math.max(...eng.log).toFixed(0)} Hz, largest change between frames ${maxStep.toFixed(2)} Hz`);
+  const steps = []; for (let i = 1; i < eng.log.length; i++) steps.push(Math.abs(eng.log[i] - eng.log[i - 1])); steps.sort((x, y) => x - y); const p99 = steps[Math.floor(steps.length * 0.99)];
+  console.log(`  pitch change per frame: 99th percentile ${p99.toFixed(2)} Hz, largest ${maxStep.toFixed(2)} Hz (limits 2 and 10: easing allows at most ~8 Hz on an abrupt stop)`);
+  if (maxStep >= 10 || p99 >= 2) { ok = false; console.log('FAIL  engine pitch is not smooth'); }
   console.log(`audio: contexts=${audioLog.ctx} oscillators=${audioLog.osc} (expect 12 = 6 karts x 2) freq updates=${audioLog.freqSets.length} max gain=${audioLog.gainMax.toFixed(3)}`);
   ok = ok && audioLog.ctx === 1 && audioLog.osc >= 12 && audioLog.freqSets.length > 1000 && audioLog.gainMax > 0.01;
   console.log(ok && !process.exitCode ? 'RESULT: PASS' : 'RESULT: FAIL');

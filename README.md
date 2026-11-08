@@ -1,6 +1,6 @@
 # HFB Racing
 
-A 3D kart racer that runs in the browser. Three built-in courses, import your own track from Blender, a live minimap, engine sounds, and online races with friends.
+A 3D kart racer that runs in the browser. Eight built-in courses, a Normal and a Chaos race mode (obstacles and rockets), import your own track from Blender, a live minimap, engine sounds, and online races with friends.
 
 No build step: it is plain HTML and JavaScript.
 
@@ -14,7 +14,7 @@ python3 -m http.server 8000
 
 then visit http://localhost:8000.
 
-**Controls:** arrow keys or WASD to drive, Space or Shift to drift (release in a corner for a boost), M to mute, R to respawn. Pick a course from the dropdown on the menu. On phones and tablets there are on-screen buttons.
+**Controls:** arrow keys or WASD to drive, Space or Shift to drift (release in a corner for a boost), M to mute, R to respawn, F to fire a rocket (Chaos race only). Pick a course from the dropdown on the menu. On phones and tablets there are on-screen buttons.
 
 ## Put it online with GitHub Pages
 
@@ -28,9 +28,20 @@ Pages serves over HTTPS, which online racing needs.
 
 Kerb Circuit, Harbour Hairpins and Ridgeback are short (about 1 km, 3 laps). Pine Summit, Canyon Rush, Harvest Valley, Coast Highway and Moonlit Ridge are 3 to 4 km long (2 laps) with their own scenery: snowy pines and cabins, cacti and mesas, barns and hay bales, palms, villas and lighthouses, and street lamps at night. They are defined in the `COURSES` list in `game.js`; `tools/gen_courses.js` is the script that searched for their layouts (it checks corner tightness, road spacing and slope; run `npm install` in `tests` first).
 
+## Normal race and Chaos race
+
+The menu has two start buttons. **Normal race** is the plain race. **Chaos race** adds:
+
+- **Obstacles** placed at random along the road: rocks, groups of barrels, blocks of ice and smouldering burnt-out cars. They are solid walls. Hitting one head-on takes most of your speed and swings you round it; a glancing hit costs little. The layout is random each race, and there is always room to get past (at least 5.5 m on every stretch). Bots steer around them, and back out if they get wedged.
+- **Rockets:** every car carries three per race (press **F**, or the Fire button). A rocket flies in a straight line along the car's heading at 324 km/h until it has been off the course for 5 seconds, then disappears. It explodes on rocks, barrels, ice and wrecks. A car it hits explodes, stays out for 3 seconds, then comes back on the road centre close to where it blew up, protected from rockets for 1.5 seconds. Cars that have finished the race cannot be hit. Bots fire too: while they still have rockets they line up behind the nearest car ahead.
+
+Online, the host picks the mode in the lobby. Everyone gets the same obstacles (the host sends a random seed). Each player's own browser decides whether its car was hit, and tells the others.
+
+The numbers are constants at the top of the *chaos mode* section of `game.js`: `ROCKETS`, `ROCKET_SPEED`, `ROCKET_OFF_SECS`, `BLAST_SECS`, `SAFE_SECS`, and `ROCKETS_STOPPED_BY_OBSTACLES` (set it to `false` to let rockets fly straight through obstacles). The obstacle spacing is in `buildObstacles()`.
+
 ## Sounds
 
-Engine sounds for every kart (they rise with speed and fade with distance), a bell chime each time you complete a lap, and a short fanfare if you finish first. M or the Sound button mutes everything. Browsers only allow sound after your first click or key press.
+Engine sounds for every kart (they rise with speed and fade with distance), a bell chime each time you complete a lap, a short fanfare if you finish first, and (in Chaos races) rocket launches, explosions and thumps when you hit an obstacle. M or the Sound button mutes everything. Browsers only allow sound after your first click or key press.
 
 ## Rules worth knowing
 
@@ -114,6 +125,8 @@ cd tests
 npm install
 node sim.js ../game.js ../examples/hillside-loop.glb nocp-test.glb   # courses, courses/ folder, import, stopping, audio
 node msim_p2p.js ../game.js ../net.js                                                 # online racing over PeerJS
+node chaos_sim.js ../game.js                                                          # Chaos: obstacles, rockets, explosions, full races on all 8 courses
+node mchaos_p2p.js ../game.js ../net.js                                               # Chaos races online over PeerJS
 ```
 
-`msim.js` tests the alternative room transport used on Claude's artifact pages and is not needed for GitHub Pages.
+`msim.js` and `mchaos.js` test the alternative room transport used on Claude's artifact pages and are not needed for GitHub Pages.

@@ -148,11 +148,13 @@ const frames = (n) => { for (let i = 0; i < n; i++) tick(); };
   check('creator is host on every screen', [A, B, C].every((I) => I.D.online.host === 'hfb-racing-' + code.toLowerCase()) && A.els.startonline.hidden === false && B.els.startonline.hidden === true && B.els.lobbywait.hidden === false);
 
   // ---- hostile client cannot make itself host or change the race
-  const evil = rawClient('evil1', code, { creator: true, nick: '<script>Ev il', race: { n: 99, phase: 'live', course: 'ridge', roster: ['evil1'] }, bots: [[0]], s: 'nope' });
+  const evil = rawClient('evil1', code, { creator: true, nick: '<script>Ev il', race: { n: 99, phase: 'live', course: 'ridge', roster: ['evil1'] }, bots: [[0]], s: 'nope', bf: [[1, 2, 3, 4, 5, 6, 7]], bx: [[1, 2, 3, 4, 5, 6]], f: [11, 0, 1, 2, 3, 4], x: 'zz' });
   await runUntil(() => A.els.players.children.length === 4, 600, 'evil joins');
   frames(30);
   check('a modified client\'s "creator" and "race" fields are ignored by the hub', A.D.online.host === 'hfb-racing-' + code.toLowerCase() && A.D.online.cfg.n === 0 && [A, B, C].every((I) => I.D.loadedCourse !== 'ridge'), 'n=' + A.D.online.cfg.n);
   check('its name is cleaned by the hub', /^scriptEv il$/.test(A.D.online.byLabel.get('evil1').presence.nick), A.D.online.byLabel.get('evil1').presence.nick);
+  { const pr = A.D.online.byLabel.get('evil1').presence;
+    check('rocket events: a player may send its own "fired" event, but cannot forge bot events or send junk', Array.isArray(pr.f) && pr.f[0] === 11 && pr.bf === undefined && pr.bx === undefined && pr.x === undefined, JSON.stringify(Object.keys(pr))); }
   check('the lobby warns when a player runs a different version of the game', /different version/.test(A.els.lobbymsg.textContent) && /Ev il/.test(A.els.lobbymsg.textContent), A.els.lobbymsg.textContent.slice(0, 90));
   check('players on the same version get no warning', ![B, C].some((I) => /different version/.test(I.els.lobbymsg.textContent) && !/Ev il/.test(I.els.lobbymsg.textContent)) || true);
   evil.conn.close();
