@@ -26,16 +26,16 @@ globalThis.fetch = async (url) => {
 };
 globalThis.window = { location: { protocol: 'http:' }, get AudioContext() { return globalThis.AudioContext; }, innerWidth: 800, innerHeight: 600, devicePixelRatio: 1, addEventListener(t, f) { (handlers[t] = handlers[t] || []).push(f); } };
 
-const audioLog = { ctx: 0, osc: 0, freqSets: [], gainMax: 0, types: {} };
+const audioLog = { ctx: 0, osc: 0, freqSets: [], gainMax: 0, types: {}, nodes: [] };
 const param = (n) => ({ value: 0, setTargetAtTime(v) { if (n === 'f') audioLog.freqSets.push(v); if (n === 'g') audioLog.gainMax = Math.max(audioLog.gainMax, v); }, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} });
-const node = () => ({ connect() {}, disconnect() {}, start() {}, stop() {}, gain: param('g'), frequency: param('f'), pan: param('p'), type: '' });
+const node = () => ({ connect() {}, disconnect() {}, start() {}, stop() {}, gain: param('g'), frequency: param('f'), pan: param('p'), Q: param('q'), threshold: param('x'), knee: param('x'), ratio: param('x'), attack: param('x'), release: param('x'), type: '' });
 globalThis.AudioContext = class { constructor() { audioLog.ctx++; this.state = 'running'; this.currentTime = 0; this.destination = node(); }
   createGain() { return node(); } createStereoPanner() { return node(); } createBiquadFilter() { return node(); } createDynamicsCompressor() { return node(); }
-  createOscillator() { audioLog.osc++; const n = node(); let t = ''; Object.defineProperty(n, 'type', { get: () => t, set: (v) => { t = v; audioLog.types[v] = (audioLog.types[v] || 0) + 1; } }); return n; } resume() {} suspend() {} };
+  createOscillator() { audioLog.osc++; const n = node(); n.log = []; n.frequency = { value: 0, setTargetAtTime(v) { n.log.push(v); audioLog.freqSets.push(v); }, setValueAtTime() {} }; audioLog.nodes.push(n); let t = ''; Object.defineProperty(n, 'type', { get: () => t, set: (v) => { t = v; audioLog.types[v] = (audioLog.types[v] || 0) + 1; } }); return n; } resume() {} suspend() {} };
 let raf = null; globalThis.requestAnimationFrame = (f) => { raf = f; };
 
 let src = fs.readFileSync(process.argv[2], 'utf8');
-src = src.replace('requestAnimationFrame(frame);\n})();', 'globalThis.__dbg = { racers, player, get N() { return N; }, get HALF() { return HALF; }, get state() { return state; }, get pts() { return pts; }, get pads() { return pads; }, get raceT() { return raceT; }, selectCourse, COURSES, step, playChime, get lostWhy() { return lostWhy; }, gateIdx: (k) => gateIdx(k), VERSION, get LAPS() { return LAPS; }, get lostT() { return lostT; }, get trackLen() { return trackLen; } };\nrequestAnimationFrame(frame);\n})();');
+src = src.replace('requestAnimationFrame(frame);\n})();', 'globalThis.__dbg = { racers, player, get N() { return N; }, get HALF() { return HALF; }, get state() { return state; }, get pts() { return pts; }, get pads() { return pads; }, get raceT() { return raceT; }, selectCourse, COURSES, step, get nrmAt() { return (i) => ({ x: -(pts[(i + 1) % N].z - pts[(i + N - 1) % N].z), z: pts[(i + 1) % N].x - pts[(i + N - 1) % N].x }); }, playChime, get lostWhy() { return lostWhy; }, gateIdx: (k) => gateIdx(k), VERSION, get LAPS() { return LAPS; }, get lostT() { return lostT; }, get trackLen() { return trackLen; } };\nrequestAnimationFrame(frame);\n})();');
 src = src.replace('const readInput = () => ({', 'const readInput = () => globalThis.__inp ? globalThis.__inp() : ({');
 new Function(src)();
 const D = globalThis.__dbg;
@@ -52,7 +52,7 @@ globalThis.__inp = () => {
 const window_ev = (t) => (handlers[t] || []).forEach((f) => f({ code: 'x', target: {} }));
 const leaves = (e) => (e.children.length ? e.children.flatMap(leaves) : [e]);
 function race(label) {
-  window_ev('pointerdown'); const t0 = { ...audioLog.types }; els.go.h.click({}); tick(60 * 3 + 30);                       // countdown
+  window_ev('pointerdown'); els.go.h.click({}); tick(60 * 3 + 30); const t0 = { ...audioLog.types }; // engine voices exist by now                       // countdown
   let guard = 0, minSp = 0, warnSeen = 0; while (D.state !== 'done' && guard++ < 60 * 400) { tick(1); if (els.warn.hidden === false) warnSeen++; for (const r of D.racers) if (r.finished) minSp = Math.min(minSp, r.speed); }
   tick(60 * 6); for (const r of D.racers) minSp = Math.min(minSp, r.speed);
   const stopped = D.racers.every((r) => !r.finished || D.raceT - r.finishT < 3 || r.speed === 0); // (a bot that finished moments ago is still braking) console.log(`  finished karts: min speed ${minSp.toFixed(2)}, all stopped=${stopped}; false 'missed checkpoint' warnings during a clean lap: ${warnSeen}`);
@@ -159,6 +159,23 @@ function geometry(label) {
     console.log(mechOk ? 'PASS  boost fade, grass, acceleration and off-course rule' : 'FAIL  boost fade / grass / off-course rule');
     if (!mechOk) process.exitCode = 1;
   }
+  // ---- karts follow the ground: road, embankment slope, then flat ground (they used to hover at road height)
+  {
+    D.selectCourse('ridge'); tick(5); els.go.h.click({}); tick(60 * 3 + 30);
+    let hi = 0; D.pts.forEach((q, i) => { if (q.y > D.pts[hi].y) hi = i; });
+    const q = D.pts[hi], nv = D.nrmAt(hi), nl = Math.hypot(nv.x, nv.z), P = D.player, results = [];
+    for (const off of [0, 5, 9, 30]) {
+      const lat = off === 0 ? 0 : D.HALF + off; // metres from the centre line
+      Object.assign(P, { x: q.x + (nv.x / nl) * lat, z: q.z + (nv.z / nl) * lat, y: q.y, vy: 0, speed: 0, idx: hi, h: 0 });
+      const track = []; for (let f = 0; f < 75; f++) { tick(1); if (P.dist > D.HALF + 40) break; Object.assign(P, { x: q.x + (nv.x / nl) * lat, z: q.z + (nv.z / nl) * lat }); track.push(P.y); }
+      const out = lat - (D.HALF + 1.4), expect = out <= 0 ? q.y : Math.max(0, q.y - out / 1.2);
+      results.push([off, P.y, expect]);
+    }
+    const okT = results.every(([off, y, e]) => Math.abs(y - e) < 0.8);
+    console.log('ground height at the top of Ridgeback (road ' + q.y.toFixed(1) + ' m): ' + results.map(([o, y, e]) => `${o === 0 ? 'on road' : o + ' m past edge'} -> ${y.toFixed(1)} (expect ${e.toFixed(1)})`).join('; '));
+    console.log(okT ? 'PASS  karts follow the road, slide down the embankment and fall to the ground' : 'FAIL  kart height'); if (!okT) process.exitCode = 1;
+    els.tomenu.h.click(); tick(5);
+  }
   if (process.argv[3]) {
     const load = (p) => { const b = fs.readFileSync(p); return { name: path.basename(p), arrayBuffer: async () => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) }; };
     handlers.drop[0]({ preventDefault() {}, dataTransfer: { files: [load(process.argv[3])] } });
@@ -173,6 +190,9 @@ function geometry(label) {
     handlers.drop[0]({ preventDefault() {}, dataTransfer: { files: [load(process.argv[4])] } }); await new Promise((r) => setTimeout(r, 300));
     console.log('after no-CP file:', els.coursemsg.textContent, '| half still', D.HALF.toFixed(1));
   }
+  const eng = audioLog.nodes.find((n) => n.type === 'sawtooth'); let maxStep = 0; for (let i = 1; i < eng.log.length; i++) maxStep = Math.max(maxStep, Math.abs(eng.log[i] - eng.log[i - 1]));
+  console.log(`engine pitch of the player's kart: ${eng.log.length} updates, pitch range ${Math.min(...eng.log).toFixed(0)}-${Math.max(...eng.log).toFixed(0)} Hz, largest change between frames ${maxStep.toFixed(2)} Hz (limit 3)`);
+  if (maxStep >= 3) { ok = false; console.log('FAIL  engine pitch is not smooth'); }
   console.log(`audio: contexts=${audioLog.ctx} oscillators=${audioLog.osc} (expect 12 = 6 karts x 2) freq updates=${audioLog.freqSets.length} max gain=${audioLog.gainMax.toFixed(3)}`);
   ok = ok && audioLog.ctx === 1 && audioLog.osc >= 12 && audioLog.freqSets.length > 1000 && audioLog.gainMax > 0.01;
   console.log(ok && !process.exitCode ? 'RESULT: PASS' : 'RESULT: FAIL');

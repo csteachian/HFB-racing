@@ -2,7 +2,7 @@
 'use strict';
 const T = THREE;
 let LAPS = 3; // per course: a course can set `laps`
-const VERSION = '2026.11.07-d'; // shown on the menu and compared between players in an online lobby
+const VERSION = '2026.11.08-a'; // shown on the menu and compared between players in an online lobby
 const FAR = 18; // metres beyond the road edge where the player counts as off course (and crawls)
 const GRASS_MAX = 6; // seconds of continuous grass before the player counts as off course
 const GATES = 14; // checkpoints around the lap; gate 0 is the start line
@@ -154,12 +154,13 @@ function applyTheme(c) {
   scene.fog.near = c.fog ? c.fog[0] : 90; scene.fog.far = c.fog ? c.fog[1] : 330;
   hemi.intensity = c.dim ? 0.5 : 0.95; sun.intensity = c.dim ? 0.35 : 0.9; // a "dim" course is lit like a moonlit night
 }
+let bankRun = 1.2; // horizontal metres of embankment per metre of height (matches bank() below); imported tracks have none
 function bank(side, color) { // embankment from the outer kerb down to the ground, so raised roads do not float
   const o = side * (HALF + 1.4), pos = [], idx = [];
   for (let i = 0; i < N; i++) {
     const j = (i + 1) % N, base = pos.length / 3;
     for (const k of [i, j]) {
-      const y = pts[k].y, o2 = o + side * (y * 1.2 + 0.01);
+      const y = pts[k].y, o2 = o + side * (y * bankRun + 0.01);
       pos.push(pts[k].x + nrm[k].x * o, y + 0.04, pts[k].z + nrm[k].z * o, pts[k].x + nrm[k].x * o2, -0.02, pts[k].z + nrm[k].z * o2);
     }
     idx.push(base, base + 1, base + 2, base + 2, base + 1, base + 3);
@@ -215,6 +216,7 @@ function addScenery(c) {
   });
 }
 function buildCourse(c) {
+  bankRun = 1.2;
   if (c.gltf) { buildImported(c.gltf, c); return; }
   const sc = c.scale || 1; loadedCourse = c.id; LAPS = c.laps || 3;
   setCenterline(c.ctrl.map(([x, z, y]) => new T.Vector3(x * sc, (y || 0) * sc, z * sc))); HALF = c.half;
@@ -236,7 +238,8 @@ const nearestIdx = (x, z) => { let b = 1e12, bi = 0; pts.forEach((p, i) => { con
 
 /* Imported course: a mesh named Road*, empties CP, CP.001, CP.002 ... in driving order, optional empties Pad*. */
 const CP_RE = /^cp[_\-\s]?(\d+)?$/i;
-function buildImported(gltf, meta) { // meta: a course loaded from courses/ (theme, width, id); absent for a hand-imported file
+function buildImported(gltf, meta) {
+  bankRun = 0.25; // a hand-made road has no built-in embankment: the ground is reached quickly beside it // meta: a course loaded from courses/ (theme, width, id); absent for a hand-imported file
   const root = gltf.scene; root.updateMatrixWorld(true);
   const cps = [], padPos = [], drop = [];
   root.traverse((o) => {
@@ -297,7 +300,7 @@ function resetRacers() {
   racers.forEach((r, k) => {
     const slot = (online.on && r.e !== undefined) ? r.e : SLOT[k], row = slot >> 1, i = N - GRID_STEP * (row + 1), s = slot % 2 ? side : -side;
     r.x = pts[i].x + nrm[i].x * s; r.z = pts[i].z + nrm[i].z * s; r.y = pts[i].y; r.h = headingOf(tan[i]);
-    Object.assign(r, { gate: GATES - 1, speed: 0, steer: 0, boost: 0, drift: 0, idx: i, dist: Math.abs(s), laps: -1, finished: false, finishT: 0, cc: r.base, drifting: false, gone: false, srcA: null, tAt: undefined });
+    Object.assign(r, { vy: 0, gate: GATES - 1, speed: 0, steer: 0, boost: 0, drift: 0, idx: i, dist: Math.abs(s), laps: -1, finished: false, finishT: 0, cc: r.base, drifting: false, gone: false, srcA: null, tAt: undefined });
   });
 }
 function locate(r) {
@@ -404,7 +407,7 @@ let lostT = 0, missed = false, grassT = 0, lostWhy = 'MISSED CHECKPOINT'; // los
 const gateIdx = (k) => Math.round((k * N) / GATES) % N;
 function respawnAtGate(p) { // back to the last checkpoint really passed, facing along the road, at a gentle speed
   const g = gateIdx(p.gate);
-  Object.assign(p, { x: pts[g].x, z: pts[g].z, y: pts[g].y, h: headingOf(tan[g]), speed: 10, steer: 0, boost: 0, drift: 0, dist: 0, idx: g, drifting: false });
+  Object.assign(p, { x: pts[g].x, z: pts[g].z, y: pts[g].y, vy: 0, h: headingOf(tan[g]), speed: 10, steer: 0, boost: 0, drift: 0, dist: 0, idx: g, drifting: false });
   camH = p.h; lostT = 0; missed = false; grassT = 0;
 }
 let lastRespawn = -1e9;
@@ -788,22 +791,23 @@ $('copycode').addEventListener('click', () => {
 /* ---------- engine sound (Web Audio, one voice per kart) ---------- */
 let audio = null, soundOn = true;
 const camDir = new THREE.Vector3();
-function makeVoice() {
+function makeVoice() { // a saw through a gentle low-pass for the growl, plus a triangle one octave down for body
   const c = audio.ctx, g = c.createGain(), pan = c.createStereoPanner ? c.createStereoPanner() : null;
-  const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
+  const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 450; lp.Q.value = 0.4;
   const o1 = c.createOscillator(), o2 = c.createOscillator();
-  o1.type = 'sawtooth'; o2.type = 'square';
-  const g2 = c.createGain(); g2.gain.value = 0.35;
-  o1.connect(lp); o2.connect(g2); g2.connect(lp); lp.connect(g);
+  o1.type = 'sawtooth'; o2.type = 'triangle';
+  const g1 = c.createGain(), g2 = c.createGain(); g1.gain.value = 0.55; g2.gain.value = 0.8;
+  o1.connect(g1); g1.connect(lp); o2.connect(g2); g2.connect(lp); lp.connect(g);
   if (pan) { g.connect(pan); pan.connect(audio.master); } else g.connect(audio.master);
   g.gain.value = 0; o1.start(); o2.start();
-  return { o1, o2, g, pan, lp };
+  return { o1, o2, g, pan, lp, sp: 0, boost: 0, level: 0, pn: 0 };
 }
 function ensureAudio() {
   if (audio) { if (audio.ctx.state === 'suspended' && soundOn) audio.ctx.resume(); return; }
   const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
   try {
     const ctx = new AC(), master = ctx.createGain(), comp = ctx.createDynamicsCompressor();
+    if (comp.threshold) { comp.threshold.value = -16; comp.knee.value = 24; comp.ratio.value = 3; comp.attack.value = 0.02; comp.release.value = 0.35; } // gentle, so six engines do not pump
     master.gain.value = soundOn ? 0.5 : 0; master.connect(comp); comp.connect(ctx.destination);
     audio = { ctx, master, voices: new Map() };
     if (ctx.state === 'suspended') ctx.resume();
@@ -838,15 +842,19 @@ function updateAudio(dt) {
   for (const r of racers) {
     let v = audio.voices.get(r);
     if (!v) { v = makeVoice(); audio.voices.set(r, v); }
-    const sp = Math.min(1, Math.abs(r.speed) / 45), live = !r.gone && !quiet;
-    const f = 52 + sp * 120 + (r.boost > 0 ? 25 : 0) + (r.drifting ? 8 : 0);
+    // every control value is eased in code first, so speed changes, boosts and collisions glide instead of stepping
+    const sp = Math.min(1, Math.abs(r.speed) / 45), live = !r.gone && !quiet, ease = (k) => Math.min(1, k * dt);
+    v.sp += (sp - v.sp) * ease(5); v.boost += ((r.boost > 0 ? 1 : 0) - v.boost) * ease(4);
+    const f = 50 + v.sp * 100 + v.boost * 12;
     const dx = r.x - camera.position.x, dz = r.z - camera.position.z, d = Math.hypot(dx, dz);
     const vol = r === player ? 0.5 : 0.55 / (1 + d * d / 260);
-    const level = live ? vol * (0.35 + 0.65 * sp) * (r.finished && r.speed < 0.5 ? 0.4 : 1) : 0;
-    v.o1.frequency.setTargetAtTime(f, t, 0.05); v.o2.frequency.setTargetAtTime(f * 0.5, t, 0.05);
-    v.lp.frequency.setTargetAtTime(500 + sp * 1400, t, 0.05);
-    v.g.gain.setTargetAtTime(level * 0.28, t, 0.05);
-    if (v.pan) v.pan.pan.setTargetAtTime(r === player ? 0 : clamp((dx * rx + dz * rz) / (d + 6), -0.9, 0.9), t, 0.05);
+    const target = live ? vol * (0.35 + 0.65 * v.sp) * (r.finished && r.speed < 0.5 ? 0.4 : 1) : 0;
+    v.level += (target - v.level) * ease(8);
+    v.pn += ((r === player ? 0 : clamp((dx * rx + dz * rz) / (d + 6), -0.9, 0.9)) - v.pn) * ease(6);
+    v.o1.frequency.setTargetAtTime(f, t, 0.08); v.o2.frequency.setTargetAtTime(f * 0.5, t, 0.08);
+    v.lp.frequency.setTargetAtTime(380 + v.sp * 900 + v.boost * 150, t, 0.1);
+    v.g.gain.setTargetAtTime(v.level * 0.3, t, 0.08);
+    if (v.pan) v.pan.pan.setTargetAtTime(v.pn, t, 0.08);
   }
   for (const [r, v] of audio.voices) if (!racers.includes(r)) { try { v.o1.stop(); v.o2.stop(); } catch (e) {} v.g.disconnect(); audio.voices.delete(r); }
 }
@@ -890,7 +898,11 @@ function update(dt) {
     }
   } else if (online.on) { for (const r of racers) if (r.kind === 'remote') smoothRemote(r, dt); }
   for (const r of racers) {
-    if (r.kind !== 'remote') r.y += (pts[r.idx].y - r.y) * Math.min(1, 12 * dt);
+    if (r.kind !== 'remote') { // follow the road, slide down the embankment, and fall off a ledge instead of hovering
+      const out = r.dist - (HALF + 1.4), road = pts[r.idx].y, ground = out <= 0 ? road : Math.max(0, road - out / bankRun);
+      if (ground < r.y - 0.05) { r.vy = (r.vy || 0) - 30 * dt; r.y += r.vy * dt; if (r.y <= ground) { r.y = ground; r.vy = 0; } }
+      else { r.vy = 0; r.y += (ground - r.y) * Math.min(1, 12 * dt); }
+    }
     r.mesh.visible = !r.gone;
     r.mesh.position.set(r.x, r.y, r.z);
     r.mesh.rotation.y = r.h + (r.drifting ? r.steer * 0.35 : 0);
