@@ -47,6 +47,12 @@ Engine sounds for every kart (they rise with speed and fade with distance), a be
 ## Rules worth knowing
 
 - **Checkpoints:** laps only count if you pass every checkpoint in order, within the road width plus a small margin. Cutting across the infield or skipping ahead shows MISSED CHECKPOINT and puts you back on the last checkpoint you really passed after about 1.5 seconds. Staying more than 18 m off the road, or driving on the grass for more than 6 seconds, shows OFF COURSE and does the same (far from the road you also crawl at 27 km/h meanwhile).
+- **Wrong way:** drive back through a checkpoint you have already passed and WRONG WAY appears; after about a second you are put back on the last checkpoint, facing the right way.
+- **Restart:** press **Backspace** (or the Restart button) to go back to the grid and start the race again. Online, only the host can restart, by pressing it twice, so nobody's race is lost to an accidental press.
+- **Bot levels:** every race, each opponent is randomly dealt Easy, Medium or Hard (shown on the results board). Easy bots drive their own lane. Medium bots take the inside line through corners, aim for boost pads and sometimes move across to hold you off. Hard bots are faster, drift for boosts, and block firmly when you try to overtake. There are 52 opponent names, a different set each race.
+- **Cars:** five shapes (Classic, Wedge, Buggy, Pickup, Formula). Pick yours in the menu; it is remembered and shown to other players online. The five bots always have different shapes, dealt out each new race.
+- **Restart vs new race:** Backspace restarts the same race with the same opponents (names, cars, levels). Only a brand-new race (Race again, a new race from the menu) deals new ones.
+- **Finish line:** players and bots are timed at the moment the front of the kart crosses the line, so whoever is in front there finishes first.
 - **Respawn:** press **R** (or the Respawn button) to jump back to your last checkpoint at a gentle speed. It never gains you ground, and works again after a second.
 - **Grass** limits you to about 60 km/h.
 - **Boost** fades out over about 1.5 seconds. To tune it, change `FALLOFF_BASE` and `FALLOFF_RATE` just above `step()` in `game.js` (lower numbers give a longer fade). The number of checkpoints is `GATES` near the top of `game.js`.
@@ -126,6 +132,7 @@ cd tests
 npm install
 node sim.js ../game.js ../examples/hillside-loop.glb nocp-test.glb   # courses, courses/ folder, import, stopping, audio
 node msim_p2p.js ../game.js ../net.js                                                 # online racing over PeerJS
+node levels_sim.js ../game.js                                                         # wrong way, finish line, bot levels and names, restart
 node chaos_sim.js ../game.js                                                          # Chaos: obstacles, rockets, explosions, full races on all 8 courses
 node mchaos_p2p.js ../game.js ../net.js                                               # Chaos races online over PeerJS
 ```

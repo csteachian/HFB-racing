@@ -100,7 +100,9 @@ label.k{display:block}
 .tagpill{font:600 11px/1.6 var(--body);letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
 .snd{position:fixed;left:max(16px,env(safe-area-inset-left,0px));top:calc(66px + env(safe-area-inset-top,0px));background:var(--panel);padding:7px 10px;font-size:12px;pointer-events:auto}
 .rsp{top:calc(106px + env(safe-area-inset-top,0px))}
-.fireb{top:calc(146px + env(safe-area-inset-top,0px));border-color:var(--alert);color:var(--alert)}
+.restartb{top:calc(146px + env(safe-area-inset-top,0px))}
+.toast{position:fixed;left:50%;top:18%;transform:translateX(-50%);pointer-events:none;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 14px;font:600 14px/1.2 var(--body);text-align:center;max-width:calc(100vw - 32px)}
+.fireb{top:calc(186px + env(safe-area-inset-top,0px));border-color:var(--alert);color:var(--alert)}
 .map{position:fixed;right:max(16px,env(safe-area-inset-right,0px));top:calc(66px + env(safe-area-inset-top,0px));background:var(--panel);border:1px solid var(--line);border-radius:8px;pointer-events:none}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .ghost{background:transparent;color:var(--ink);border:1px solid var(--ink-dim);border-radius:6px;padding:9px 13px;font:600 14px/1 var(--body);cursor:pointer}
@@ -141,9 +143,11 @@ dd{margin:0}
   </div>
   <button class="ghost snd" id="snd" type="button" tabindex="-1">Sound on</button>
   <button class="ghost snd rsp" id="rsp" type="button" tabindex="-1">Respawn (R)</button>
+  <button class="ghost snd restartb" id="restart" type="button" tabindex="-1">Restart (Backspace)</button>
+  <div class="toast" id="toast" role="status" hidden></div>
   <button class="ghost snd fireb" id="fire" type="button" tabindex="-1" hidden>Fire (F)</button>
   <div class="warn" id="boom" role="status" hidden><b>DESTROYED</b><span id="boomt"></span></div>
-  <div class="warn" id="warn" role="status" hidden><b id="warnt">MISSED CHECKPOINT</b><span>Heading back to the track</span></div>
+  <div class="warn" id="warn" role="status" hidden><b id="warnt">MISSED CHECKPOINT</b><span id="warnsub">Heading back to the track</span></div>
   <canvas class="map" id="map" aria-label="Map of the course showing every kart"></canvas>
   <div class="speed" id="speedo">
     <div><b id="spd">0</b><small>km/h</small></div>
@@ -179,6 +183,8 @@ dd{margin:0}
       </div>
       <input type="file" id="file" accept=".glb,.gltf,model/gltf-binary" hidden>
     </div>
+    <div class="course"><span class="k">Your car</span>
+      <select class="field sel" id="carsel" aria-label="Your car"><option value="0">Classic</option><option value="1">Wedge</option><option value="2">Buggy</option><option value="3">Pickup</option><option value="4">Formula</option></select></div>
     <div class="row">
       <button class="cta" id="go">Normal race</button>
       <button class="cta chaos" id="gochaos">Chaos race</button>
@@ -192,6 +198,7 @@ dd{margin:0}
       <dt>Drift</dt><dd>Hold Space in a corner, release for a boost</dd>
       <dt>Respawn</dt><dd>R, to go back to your last checkpoint</dd>
       <dt>Fire</dt><dd>F in a Chaos race: three rockets each</dd>
+      <dt>Restart</dt><dd>Backspace, or the Restart button. Online, the host presses it twice</dd>
       <dt>Boost pads</dt><dd>Drive over the amber chevrons</dd>
     </dl>
     <p class="note" id="nogl" hidden>This browser could not start WebGL, so the 3D view is unavailable.</p>
@@ -252,8 +259,8 @@ dd{margin:0}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js" integrity="sha384-nlUQ8ZqCbvStErob+biJNzSgltf6urV3VGqhfIfzhmg9RXmpeRm76ELw0pYnKlTR" crossorigin="anonymous"></script>
-<script src="net.js?v=2026.11.08-c"></script>
-<script src="game.js?v=2026.11.08-c"></script>
+<script src="net.js?v=2026.11.16-b"></script>
+<script src="game.js?v=2026.11.16-b"></script>
 
 </body>
 </html>

@@ -2,7 +2,7 @@
 'use strict';
 const T = THREE;
 let LAPS = 3; // per course: a course can set `laps`
-const VERSION = '2026.11.08-c'; // shown on the menu and compared between players in an online lobby
+const VERSION = '2026.11.16-b'; // shown on the menu and compared between players in an online lobby
 const FAR = 18; // metres beyond the road edge where the player counts as off course (and crawls)
 const GRASS_MAX = 6; // seconds of continuous grass before the player counts as off course
 const GATES = 14; // checkpoints around the lap; gate 0 is the start line
@@ -276,22 +276,57 @@ const G = {
   wing: new T.BoxGeometry(2, 0.1, 0.5), wheel: new T.CylinderGeometry(0.45, 0.45, 0.45, 12).rotateZ(Math.PI / 2),
 };
 const tyre = new T.MeshLambertMaterial({ color: 0x14171f }), skin = new T.MeshLambertMaterial({ color: 0xf2d3b0 });
-function makeKart(color) {
-  const mat = new T.MeshLambertMaterial({ color }), g = new T.Group();
+const CAR_NAMES = ['Classic', 'Wedge', 'Buggy', 'Pickup', 'Formula'];
+const bigWheel = new T.CylinderGeometry(0.62, 0.62, 0.55, 12).rotateZ(Math.PI / 2);
+const box = (w, h, d) => new T.BoxGeometry(w, h, d);
+function buildCar(shape, mat) { // five bodies, all about the same size on the road so they race and collide alike
+  const g = new T.Group();
   const add = (geo, m, x, y, z) => { const o = new T.Mesh(geo, m); o.position.set(x, y, z); g.add(o); return o; };
-  add(G.body, mat, 0, 0.65, 0); add(G.nose, mat, 0, 0.55, 1.7); add(G.head, skin, 0, 1.45, -0.2);
-  add(G.wing, mat, 0, 1.25, -1.5);
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) add(G.wheel, tyre, sx * 1.05, 0.45, sz * 1.0);
-  g.userData.mat = mat; scene.add(g); return g;
+  const wheels = (geo, y, x, zs) => { for (const sx of [-1, 1]) for (const z of zs) add(geo, tyre, sx * x, y, z); };
+  if (shape === 1) { // Wedge: low and flat with a big rear wing
+    add(box(1.7, 0.45, 3.6), mat, 0, 0.6, 0); add(box(1.1, 0.22, 1.5), mat, 0, 0.42, 2.3); add(G.head, skin, 0, 1.2, -0.3);
+    add(box(2.3, 0.1, 0.6), mat, 0, 1.55, -1.7); for (const sx of [-1, 1]) add(box(0.1, 0.8, 0.5), mat, sx * 1.0, 1.15, -1.7);
+    wheels(G.wheel, 0.45, 1.05, [-1.2, 1.2]);
+  } else if (shape === 2) { // Buggy: tall fat wheels and a roll cage
+    add(box(1.5, 0.45, 2.6), mat, 0, 0.95, 0); add(box(1.0, 0.3, 0.8), mat, 0, 0.85, 1.6); add(G.head, skin, 0, 1.75, -0.1);
+    for (const sx of [-1, 1]) for (const z of [-0.7, 0.8]) add(box(0.08, 1.1, 0.08), tyre, sx * 0.7, 1.4, z);
+    add(box(1.5, 0.08, 1.6), tyre, 0, 1.95, 0.05); add(box(1.9, 0.12, 0.4), mat, 0, 1.4, -1.55);
+    wheels(bigWheel, 0.62, 1.15, [-1.15, 1.15]);
+  } else if (shape === 3) { // Pickup: boxy cab, bonnet and open back
+    add(box(2.0, 0.55, 3.6), mat, 0, 0.8, 0); add(box(1.8, 0.7, 1.2), mat, 0, 1.35, 0.15); add(box(1.8, 0.3, 1.1), mat, 0, 1.0, 1.7);
+    add(box(2.0, 0.35, 0.12), mat, 0, 1.2, -1.75); add(G.head, skin, 0, 1.65, 0.1);
+    wheels(G.wheel, 0.45, 1.15, [-1.15, 1.2]);
+  } else if (shape === 4) { // Formula: narrow with side pods, open wheels and two wings
+    add(box(0.9, 0.45, 3.8), mat, 0, 0.6, 0); add(box(0.55, 0.4, 1.5), mat, 0, 0.5, 0.2).position.x = -0.8; add(box(0.55, 0.4, 1.5), mat, 0.8, 0.5, 0.2);
+    add(box(2.1, 0.08, 0.5), mat, 0, 0.3, 2.3); add(box(1.9, 0.1, 0.55), mat, 0, 1.25, -1.9); add(G.head, skin, 0, 1.15, -0.1);
+    wheels(G.wheel, 0.45, 1.1, [-1.5, 1.4]);
+  } else { // Classic
+    add(G.body, mat, 0, 0.65, 0); add(G.nose, mat, 0, 0.55, 1.7); add(G.head, skin, 0, 1.45, -0.2); add(G.wing, mat, 0, 1.25, -1.5);
+    wheels(G.wheel, 0.45, 1.05, [-1, 1]);
+  }
+  return g;
+}
+function setShape(r, shape) {
+  shape = Number.isInteger(shape) && shape >= 0 && shape < CAR_NAMES.length ? shape : 0;
+  if (r.shape === shape) return; r.shape = shape;
+  if (r.body) { r.mesh.remove(r.body); r.body.traverse((o) => { if (o.geometry && o.userData.own) o.geometry.dispose(); }); }
+  r.body = buildCar(shape, r.mesh.userData.mat); r.mesh.add(r.body);
+}
+function makeKart(color) {
+  const g = new T.Group(); g.userData.mat = new T.MeshLambertMaterial({ color }); scene.add(g); return g;
 }
 
 /* ---------- racers ---------- */
 const NAMES = ['You', 'Pixel', 'Dash', 'Murray', 'Nova', 'Rook'];
 const COLORS = [0xffb627, 0xe04a3a, 0x3aa0e0, 0x7bd35a, 0xc86fe0, 0xe8ecf2];
 const racers = NAMES.map((name, k) => ({
-  name, kind: k ? 'bot' : 'local', color: COLORS[k], label: null, botIdx: -1, gone: false, mesh: makeKart(COLORS[k]), base: 0.88 + (k * 0.017) % 0.09, lane: ((k * 37) % 9) - 4,
+  name, kind: k ? 'bot' : 'local', color: COLORS[k], label: null, botIdx: -1, gone: false, mesh: makeKart(COLORS[k]), shape: -1, base: 0.88 + (k * 0.017) % 0.09, lane: ((k * 37) % 9) - 4,
 }));
 const player = racers[0];
+const savedCar = () => { try { return Math.max(0, Math.min(CAR_NAMES.length - 1, parseInt(localStorage.getItem('hfbracing-car'), 10) || 0)); } catch (e) { return 0; } };
+let myCar = savedCar();
+racers.forEach((r, k) => setShape(r, k ? (k * 2) % CAR_NAMES.length : myCar));
+const randomCars = () => { const d = shuffled([0, 1, 2, 3, 4]); return racers.slice(1).map((_, i) => d[i % 5]); };
 const online = { on: false, room: null, code: '', me: '', host: '', hostPeer: null, byLabel: new Map(), cfg: null, snap: null, seenN: 0, cacheBots: null, wasHost: false, spectating: false, sentAt: -1e9 };
 let roomNS = null, loadedCourse = 'kerb', tNow = 0, boardT = 0;
 const SLOT = [4, 0, 1, 2, 3, 5]; // player starts on row 3, left
@@ -312,14 +347,17 @@ function locate(r) {
     if (q < best) { best = q; bi = k; }
   }
   const old = r.idx; r.idx = bi; r.dist = Math.sqrt(best);
-  if (r === player) { // the player's laps are counted by checkpoints (see checkLost); only a backwards crossing is handled here
-    if (old < N * 0.25 && bi > N * 0.75) { r.laps--; r.gate = GATES - 1; }
-    return;
-  }
+  if (r === player) return; // the player's laps are counted by checkpoints (see checkLost), which never run backwards
   if (old > N * 0.75 && bi < N * 0.25) {
     r.laps++;
-    if (r.laps >= LAPS && !r.finished) { r.finished = true; r.finishT = raceT; }
+    if (r.laps >= LAPS && !r.finished) { r.finished = true; r.finishT = crossTime(r); }
   } else if (old < N * 0.25 && bi > N * 0.75) r.laps--;
+}
+// The moment a kart crosses the start/finish line, worked out from where it is now: the same rule for players and bots, so a
+// kart that is ahead of another at the line always records the earlier time.
+function crossTime(r) {
+  const s = (r.x - pts[0].x) * tan[0].x + (r.z - pts[0].z) * tan[0].z; // metres past the line (negative: not there yet)
+  return raceT - clamp(s, -5, 5) / Math.max(8, Math.abs(r.speed));
 }
 const progress = (r) => r.laps * N + r.idx;
 const ranking = () => racers.slice().sort((a, b) => (b.finished - a.finished) || (a.finished ? a.finishT - b.finishT : progress(b) - progress(a)));
@@ -351,8 +389,54 @@ function step(r, inp, dt) {
   r.x += Math.sin(r.h) * r.speed * dt; r.z += Math.cos(r.h) * r.speed * dt;
   r.drifting = drifting;
 }
+/* ---------- bot names and skill levels ---------- */
+const BOT_POOL = ['Pixel', 'Dash', 'Murray', 'Nova', 'Rook', 'Turbo', 'Blaze', 'Ziggy', 'Comet', 'Echo', 'Sparky', 'Mango', 'Jinx', 'Ranger', 'Vortex', 'Gizmo', 'Bolt', 'Tango', 'Zephyr', 'Maverick',
+  'Pepper', 'Orbit', 'Quill', 'Sprocket', 'Falcon', 'Juno', 'Kodiak', 'Lyra', 'Moxie', 'Nitro', 'Onyx', 'Piston', 'Quasar', 'Riff', 'Skid', 'Tank', 'Ember', 'Flash', 'Gadget', 'Hawk',
+  'Indy', 'Jett', 'Kestrel', 'Lotus', 'Mach', 'Nebula', 'Otto', 'Penny', 'Raven', 'Scout', 'Taz', 'Willow'];
+const shuffled = (a) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const pickNames = (n) => shuffled(BOT_POOL).slice(0, n);
+// Three levels. base: top speed as a share of the player's 40 m/s. line: how much of a racing line (inside of corners) it takes.
+// pads: how far ahead it will steer for a boost pad. block / blockRange: how firmly and from how far it moves across to stop you
+// overtaking. drift: charges drift boosts in corners. catchUp: how much it slows/speeds to stay near you. turn: lane-change speed.
+const SKILLS = [null,
+  { name: 'Easy', base: [0.90, 0.94], catchUp: 0.05, line: 0, pads: 0, block: 0, blockRange: 0, drift: false, turn: 4 },
+  { name: 'Medium', base: [0.97, 1.00], catchUp: 0.03, line: 0.7, pads: 25, block: 0.6, blockRange: 18, drift: false, turn: 6 },
+  { name: 'Hard', base: [1.00, 1.04], catchUp: 0.01, line: 1, pads: 45, block: 1, blockRange: 32, drift: true, turn: 8 }];
+function assignBotSkills() { // dealt out like cards at the start of every race, so there is always a mix of levels
+  const bots = racers.filter((r) => r.kind === 'bot'), deck = shuffled(bots.map((_, i) => (i % 3) + 1));
+  bots.forEach((r, i) => { const sk = SKILLS[deck[i]]; r.skill = deck[i]; r.base = sk.base[0] + Math.random() * (sk.base[1] - sk.base[0]); r.lane = (Math.random() * 2 - 1) * 4; });
+}
+const lateral = (o) => (o.x - pts[o.idx].x) * nrm[o.idx].x + (o.z - pts[o.idx].z) * nrm[o.idx].z; // sideways offset from the road centre, + is left
+function padInfo(p) {
+  let b = 1e12, bi = 0; for (let i = 0; i < N; i++) { const dx = pts[i].x - p.x, dz = pts[i].z - p.z, q = dx * dx + dz * dz; if (q < b) { b = q; bi = i; } }
+  p.pidx = bi; p.poff = (p.x - pts[bi].x) * nrm[bi].x + (p.z - pts[bi].z) * nrm[bi].z;
+}
+function baseLane(r) { // where this bot would like to be on the road: its own lane, a racing line, a boost pad, or across the player's path
+  const sk = SKILLS[r.skill || 1], mpi = trackLen / N, lim = HALF * 0.8;
+  let want = clamp(r.lane, -HALF * 0.6, HALF * 0.6);
+  if (sk.line) { // inside of the corner coming up, middle of the road on straights
+    const a = headingOf(tan[(r.idx + Math.round(10 / mpi)) % N]), b = headingOf(tan[(r.idx + Math.round(55 / mpi)) % N]);
+    want = want * (1 - sk.line) + clamp(angDiff(b - a) / 0.6, -1, 1) * HALF * 0.7 * sk.line;
+  }
+  if (sk.pads && r.boost <= 0) {
+    let bd = 1e9, bp = null;
+    for (const p of pads) { if (p.pidx === undefined) padInfo(p); const d = ((p.pidx - r.idx + N) % N) * mpi; if (d > 5 && d < sk.pads && d < bd) { bd = d; bp = p; } }
+    if (bp) want = clamp(bp.poff, -lim, lim);
+  }
+  if (sk.block && raceT > 2) { // a human close behind: move across to their side of the road to stay in front
+    let att = null, bd = 1e9;
+    for (const o of racers) {
+      if (o === r || o.gone || o.dead > 0 || o.finished || !(o.kind === 'local' || (o.kind === 'remote' && o.label))) continue;
+      const gap = (((r.idx - o.idx + N + N / 2) % N) - N / 2) * mpi; // metres they are behind me
+      if (gap > 2 && gap < sk.blockRange && o.speed > r.speed - 8 && gap < bd) { bd = gap; att = o; }
+    }
+    if (att) { const l = lateral(att); if (Math.abs(l - lateral(r)) < 8) want += (clamp(l, -lim, lim) - want) * sk.block; }
+  }
+  return clamp(want, -lim, lim);
+}
+
 function botInput(r, dt) {
-  const k = (r.idx + Math.max(5, Math.round(18 / (trackLen / N)))) % N, lane = chaosOn ? botLane(r, dt) : clamp(r.lane, -HALF * 0.6, HALF * 0.6);
+  const k = (r.idx + Math.max(5, Math.round(18 / (trackLen / N)))) % N, lane = botLane(r, dt), sk = SKILLS[r.skill || 1];
   const tx = pts[k].x + nrm[k].x * lane, tz = pts[k].z + nrm[k].z * lane;
   const diff = angDiff(Math.atan2(tx - r.x, tz - r.z) - r.h);
   if (chaosOn) { // wedged against something: back out for a moment, then try again
@@ -360,14 +444,19 @@ function botInput(r, dt) {
     r.stuck = Math.abs(r.speed) < 2 && raceT > 3 && !r.finished ? (r.stuck || 0) + dt : 0;
     if (r.stuck > 1.3) { r.recov = 1.0; r.stuck = 0; }
   }
-  r.cc = r.base + clamp((progress(player) - progress(r)) * 0.0007, -0.05, 0.05); // gentle catch-up
-  return { steer: clamp(diff * 2.2, -1, 1), gas: Math.abs(diff) < 0.55 || r.speed < 18, brake: Math.abs(diff) > 0.85 && r.speed > 22, drift: false };
+  r.cc = r.base + clamp((progress(player) - progress(r)) * 0.0007, -sk.catchUp, sk.catchUp); // gentle catch-up, less for the better bots
+  let drift = false;
+  if (sk.drift && r.speed > 22 && Math.abs(diff) < 0.8) { // hard bots slide through corners to charge a boost
+    const mpi = trackLen / N, a = headingOf(tan[(r.idx + Math.round(6 / mpi)) % N]), b = headingOf(tan[(r.idx + Math.round(30 / mpi)) % N]);
+    drift = Math.abs(angDiff(b - a)) > 0.28 && r.drift < 1.85;
+  }
+  return { steer: clamp(diff * 2.2, -1, 1), gas: Math.abs(diff) < 0.55 || r.speed < 18, brake: Math.abs(diff) > 0.85 && r.speed > 22, drift };
 }
 
 /* ---------- input ---------- */
 const keys = {}, touch = {};
 const BLOCK = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'];
-window.addEventListener('keydown', (e) => { if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return; keys[e.code] = true; if (e.code === 'KeyM' && !e.repeat) toggleSound(); if (e.code === 'KeyR' && !e.repeat) respawnKey(); if (BLOCK.includes(e.code)) e.preventDefault(); });
+window.addEventListener('keydown', (e) => { if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return; keys[e.code] = true; if (e.code === 'KeyM' && !e.repeat) toggleSound(); if (e.code === 'KeyR' && !e.repeat) respawnKey(); if (e.code === 'Backspace') { if (!e.repeat) restartRace(); e.preventDefault(); } if (BLOCK.includes(e.code)) e.preventDefault(); });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 document.querySelectorAll('.tbtn').forEach((b) => {
   const k = b.dataset.k, set = (v) => (e) => { e.preventDefault(); touch[k] = v; b.classList.toggle('on', v); };
@@ -393,7 +482,7 @@ function renderBoard() {
   const board = $('board'); board.textContent = '';
   ranking().forEach((r, i) => {
     const li = document.createElement('li'); if (r === player) li.className = 'me';
-    for (const [cls, txt] of [['', String(i + 1)], ['', r.name], ['t', r.finished ? fmt(r.finishT) : (r.gone ? 'left' : 'racing')]]) {
+    for (const [cls, txt] of [['', String(i + 1)], ['', r.name + (r.kind === 'bot' && r.skill ? ' \u00b7 ' + SKILLS[r.skill].name : '')], ['t', r.finished ? fmt(r.finishT) : (r.gone ? 'left' : 'racing')]]) {
       const sp = document.createElement('span'); if (cls) sp.className = cls; sp.textContent = txt; li.appendChild(sp);
     }
     board.appendChild(li);
@@ -415,6 +504,7 @@ function respawnAtGate(p) { // back to the last checkpoint really passed, facing
   Object.assign(p, { x: pts[g].x, z: pts[g].z, y: pts[g].y, vy: 0, h: headingOf(tan[g]), speed: 10, steer: 0, boost: 0, drift: 0, dist: 0, idx: g, drifting: false });
   camH = p.h; lostT = 0; missed = false; grassT = 0;
 }
+function respawnAfterWrong(p) { respawnAtGate(p); }
 let lastRespawn = -1e9;
 function respawnKey() { // the player's own Respawn key / button
   if (state !== 'race' || player.finished || player.dead > 0 || tNow - lastRespawn < 800) return;
@@ -427,20 +517,27 @@ function checkLost(dt) {
   const p = player;
   if (p.finished) { lostT = 0; missed = false; grassT = 0; return; }
   const next = (p.gate + 1) % GATES, gi = gateIdx(next), ahead = ((p.idx - gi + N + N / 2) % N) - N / 2; // signed gap along the track
-  if (!missed && Math.abs(ahead) <= 3 && p.dist <= HALF + 10) {
+  if (!missed && ahead >= 0 && ahead <= 3 && p.dist <= HALF + 10) { // credited when the kart reaches the checkpoint, as bots are at the line
     p.gate = next;
     if (next === 0) { // start line: a lap is done
       p.laps++; lapCrossed();
-      if (p.laps >= LAPS && !p.finished) { p.finished = true; p.finishT = raceT; playerFinished(); if (racers.every((r) => r === p || !r.finished)) playFanfare(); else playChime(); }
+      if (p.laps >= LAPS && !p.finished) { p.finished = true; p.finishT = crossTime(p); playerFinished(); if (racers.every((r) => r === p || !r.finished)) playFanfare(); else playChime(); }
     }
   } else if (!missed && ahead > 6 && ahead < N / GATES) missed = true;
   grassT = p.dist > HALF + 1.2 ? grassT + dt : 0;
-  if (!(missed || p.dist > HALF + FAR || grassT > GRASS_MAX)) { lostT = 0; return; }
-  lostWhy = missed ? 'MISSED CHECKPOINT' : 'OFF COURSE';
+  const mpi = trackLen / N, behind = ((gateIdx(p.gate) - p.idx + N + N / 2) % N) - N / 2; // metres-ish back past the last checkpoint passed
+  const wrong = behind > Math.max(4, Math.ceil(12 / mpi)); // driven back through an earlier checkpoint: the wrong way round
+  if (!(wrong || missed || p.dist > HALF + FAR || grassT > GRASS_MAX)) { lostT = 0; return; }
+  lostWhy = wrong ? 'WRONG WAY' : missed ? 'MISSED CHECKPOINT' : 'OFF COURSE';
   lostT += dt;
-  if (lostT >= 1.6) respawnAtGate(p);
+  if (lostT >= (wrong ? 1.0 : 1.6)) respawnAfterWrong(p);
 }
-function startRace() {
+function startRace(keep) { // keep: a restart of the same race, so the opponents (names, cars, levels) stay as they were
+  if (!keep) {
+    if (!online.on) { const cars = randomCars(); pickNames(racers.length - 1).forEach((n, i) => { racers[i + 1].name = n; setTag(racers[i + 1], n); setShape(racers[i + 1], cars[i]); }); } // a fresh set of opponents each race
+    assignBotSkills();
+  }
+  setShape(player, myCar);
   resetRacers(); if (chaosOn) buildObstacles(chaosSeed); else clearChaos();
   if (online.on) markSeen(); else { outbox = {}; botFireLog = []; botBlastLog = []; botTakeLog = []; botEvDirty = false; }
   fireHeld = false; shake = 0; $('ammochip').hidden = !chaosOn; $('firebtn').hidden = !chaosOn; $('fire').hidden = !chaosOn;
@@ -449,6 +546,19 @@ function startRace() {
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // so the keys drive the kart, not a focused menu control
   $('menu').hidden = true; $('results').hidden = true; $('lobby').hidden = true; $('join').hidden = true; $('hud').hidden = false;
 }
+let toastTimer = 0, restartAt = -1e9;
+function toast(msg, ms) { const el = $('toast'); el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, ms || 2200); }
+function restartRace() { // Backspace or the Restart button: back to the grid for a new start
+  if (state !== 'race' && state !== 'count') return;
+  if (!online.on) { startRace(true); return; }
+  if (!isHost()) { toast('Only the host can restart an online race'); return; }
+  if (tNow - restartAt < 2500) { restartAt = -1e9; hostStart('live', true); return; } // twice in a row, so nobody's race is wrecked by an accidental key
+  restartAt = tNow; toast('Press Backspace again to restart the race for everyone', 2500);
+}
+$('restart').addEventListener('click', (e) => { restartRace(); e.currentTarget.blur(); });
+const carsel = $('carsel'); carsel.value = String(myCar);
+carsel.addEventListener('change', () => { myCar = savedCarClamp(+carsel.value); try { localStorage.setItem('hfbracing-car', String(myCar)); } catch (e) { /* storage can be unavailable */ } setShape(player, myCar); if (online.on && online.room) online.room.presence({ car: myCar }).catch(() => {}); carsel.blur(); });
+const savedCarClamp = (v) => Math.max(0, Math.min(CAR_NAMES.length - 1, v | 0));
 $('go').addEventListener('click', () => { chaosOn = false; startRace(); });
 $('gochaos').addEventListener('click', () => { chaosOn = true; chaosSeed = uid(); startRace(); });
 $('again').addEventListener('click', () => { if (online.on) { hostStart('live'); return; } if (chaosOn) chaosSeed = uid(); startRace(); });
@@ -610,7 +720,7 @@ function assignSolo() {
     setColor(r, COLORS[k]); setTag(r, NAMES[k]); r.tag.spr.visible = k > 0;
   });
 }
-function assignOnline(roster, host) {
+function assignOnline(roster, host, botNames) {
   const hostBots = online.hostPeer && online.hostPeer.presence.bots;
   setIdentity(player, roster.indexOf(online.me), myNick());
   let i = 1;
@@ -618,11 +728,11 @@ function assignOnline(roster, host) {
     if (l === online.me) continue;
     const r = racers[i++], p = online.byLabel.get(l);
     Object.assign(r, { kind: 'remote', label: l, botIdx: -1 }); setIdentity(r, roster.indexOf(l), nickOf(p));
-    r.stale = (p && p.presence.s) || null;
+    setShape(r, p && p.presence.car); r.stale = (p && p.presence.s) || null;
   }
   for (let b = 0; i < racers.length; b++) {
     const r = racers[i++];
-    Object.assign(r, { kind: host ? 'bot' : 'remote', label: null, botIdx: b }); setIdentity(r, roster.length + b, BOT_NAMES[b]);
+    Object.assign(r, { kind: host ? 'bot' : 'remote', label: null, botIdx: b }); setIdentity(r, roster.length + b, (Array.isArray(botNames) && typeof botNames[b] === 'string' && botNames[b].replace(/[^\p{L}\p{N} _.-]/gu, '').slice(0, 12)) || BOT_NAMES[b]);
     r.stale = (hostBots && hostBots[b]) || null;
   }
 }
@@ -652,7 +762,7 @@ async function joinRoom(raw, create) {
     }
     const nick = myNick(); try { localStorage.setItem('hfbracing-nick', nick); } catch (e) { /* storage can be unavailable */ }
     const startCourse = builtIn(loadedCourse) ? loadedCourse : COURSES[0].id;
-    room.presence(create ? { nick, ver: VERSION, creator: true, race: { n: 0, phase: 'lobby', course: startCourse, chaos: false, seed: 0, roster: [] } } : { nick, ver: VERSION });
+    room.presence(create ? { nick, car: myCar, ver: VERSION, creator: true, race: { n: 0, phase: 'lobby', course: startCourse, chaos: false, seed: 0, roster: [] } } : { nick, car: myCar, ver: VERSION });
     for (let i = 0; i < 30 && !room.peers().some((p) => p.isMe); i++) await wait(100);
     if (!create && !p2p) {
       await wait(1400); // others answer over a second or two
@@ -719,13 +829,16 @@ function goLobby() {
 function startOnlineRace(cfg) {
   if (!builtIn(cfg.course)) { leaveRoom('This room uses a course your browser has not loaded. Reload the page and try again.'); return; }
   if (cfg.course !== loadedCourse && builtIn(cfg.course)) { buildCourse(builtIn(cfg.course)); buildMap(); }
-  online.spectating = false; assignOnline(cfg.roster, isHost()); chaosOn = !!cfg.chaos; chaosSeed = (cfg.seed | 0) || 1; startRace();
+  online.spectating = false; assignOnline(cfg.roster, isHost(), cfg.botNames); chaosOn = !!cfg.chaos; chaosSeed = (cfg.seed | 0) || 1;
+  if (Array.isArray(cfg.botCars)) racers.filter((r) => r.botIdx >= 0).forEach((r) => setShape(r, cfg.botCars[r.botIdx]));
+  startRace(!!cfg.keep);
 }
-function hostStart(phase) {
+const botsOf = (k) => racers.filter((r) => r.botIdx >= 0).sort((a, b) => a.botIdx - b.botIdx).map((r) => r[k]);
+function hostStart(phase, keep) {
   if (!isHost()) return;
   const cfg = online.cfg || {};
   const roster = viewersOf(online.room.peers()).map((p) => p.peer).sort().slice(0, 6);
-  online.room.presence({ race: { n: Math.max(online.seenN, cfg.n || 0) + 1, phase, course: cfg.course || loadedCourse, chaos: !!cfg.chaos, seed: phase === 'live' ? uid() : 0, roster: phase === 'live' ? roster : [] } });
+  online.room.presence({ race: { n: Math.max(online.seenN, cfg.n || 0) + 1, phase, course: cfg.course || loadedCourse, chaos: !!cfg.chaos, seed: phase === 'live' ? (keep && cfg.seed ? cfg.seed : uid()) : 0, keep: !!keep && phase === 'live', botNames: phase !== 'live' ? [] : keep ? botsOf('name') : pickNames(5), botCars: phase !== 'live' ? [] : keep ? botsOf('shape') : randomCars(), roster: phase === 'live' ? roster : [] } });
 }
 $('lobbypicker').addEventListener('change', (e) => { hostCourse(e.target.value); if (e.target.blur) e.target.blur(); });
 $('lobbymode').addEventListener('change', (e) => { if (isHost()) online.room.presence({ race: Object.assign({}, online.cfg, { chaos: e.target.value === '1' }) }); if (e.target.blur) e.target.blur(); });
@@ -771,7 +884,7 @@ function pollRoom() {
     if (r.kind !== 'remote') continue;
     if (r.label) {
       const p = online.byLabel.get(r.label); r.gone = !p;
-      if (p) { const nm = nickOf(p); if (nm !== r.name) { r.name = nm; setTag(r, nm); } if (p.presence.s) feed(r, p.presence.s); }
+      if (p) { const nm = nickOf(p); if (nm !== r.name) { r.name = nm; setTag(r, nm); } setShape(r, p.presence.car); if (p.presence.s) feed(r, p.presence.s); }
     } else if (online.hostPeer && online.hostPeer.presence.bots) {
       const a = online.hostPeer.presence.bots[r.botIdx]; if (a) feed(r, a);
     }
@@ -981,14 +1094,14 @@ function hitObstacles(r) { // obstacles are walls: push the kart out and take sp
 }
 function botLane(r, dt) { // bots aim for the lane they like, unless an obstacle is in the way: then the nearest free lane
   const mpi = trackLen / N;
-  let want = clamp(r.lane, -HALF * 0.6, HALF * 0.6);
+  let want = baseLane(r);
   let pk = null;
   if (r.ammo < MAX_CARRY && pickups.length) { // a rocket pickup ahead on this lap: head for it
     const lap = clamp(r.laps, 0, LAPS - 1); let best = 1e9;
     for (const p of pickups) { if (p.taken || p.lap !== lap) continue; const d = ((p.idx - r.idx + N) % N) * mpi; if (d > 4 && d < 55 && d < best) { best = d; pk = p; } }
     if (pk) want = clamp(pk.off, -HALF * 0.7, HALF * 0.7);
   }
-  if (!pk && r.ammo > 0 && raceT > 3) { // still holding rockets: line up behind the nearest kart ahead
+  if (!pk && chaosOn && r.ammo > 0 && raceT > 3) { // still holding rockets: line up behind the nearest kart ahead
     let best = 1e9, tgt = null;
     for (const o of racers) { if (o === r || o.gone || o.dead > 0 || o.safe > 0 || o.finished) continue; const d = ((o.idx - r.idx + N) % N) * mpi; if (d > 10 && d < 70 && d < best) { best = d; tgt = o; } }
     if (tgt) want = clamp((tgt.x - pts[tgt.idx].x) * nrm[tgt.idx].x + (tgt.z - pts[tgt.idx].z) * nrm[tgt.idx].z, -HALF * 0.75, HALF * 0.75);
@@ -1003,7 +1116,7 @@ function botLane(r, dt) { // bots aim for the lane they like, unless an obstacle
     }
   }
   if (r.laneNow === undefined) r.laneNow = want;
-  r.laneNow += (aim - r.laneNow) * Math.min(1, 6 * dt);
+  r.laneNow += (aim - r.laneNow) * Math.min(1, SKILLS[r.skill || 1].turn * dt);
   return r.laneNow;
 }
 function botFire(r, dt) {
@@ -1156,7 +1269,11 @@ function remoteBlast(r, rocketId, x, z, y) { // a player (or a bot on the host) 
 }
 function respawnAfterBlast(r) { // back on the road centre close to where it blew up, stepping back if a obstacle is there
   let i = r.idx;
-  for (let t = 0; t < 8 && obstacles.some((o) => Math.hypot(o.x - pts[i].x, o.z - pts[i].z) < o.r + 3.4); t++) i = (i - 1 + N) % N;
+  for (let t = 0; t < 8 && obstacles.some((o) => Math.hypot(o.x - pts[i].x, o.z - pts[i].z) < o.r + 3.4); t++) {
+    const j = (i - 1 + N) % N;
+    if (r === player && ((gateIdx(player.gate) - j + N + N / 2) % N) - N / 2 > 2) break; // never back up past the checkpoint already passed
+    i = j;
+  }
   const p = pts[i];
   Object.assign(r, { x: p.x, z: p.z, y: p.y, vy: 0, h: headingOf(tan[i]), speed: 10, steer: 0, boost: 0, drift: 0, dist: 0, idx: i, drifting: false, safe: SAFE_SECS, dead: 0 });
   if (r === player) { camH = r.h; lostT = 0; missed = false; grassT = 0; }
@@ -1334,7 +1451,7 @@ function updateHud() {
   $('flag').hidden = !(player.boost > 0);
   $('ammochip').hidden = !chaosOn; if (chaosOn) $('ammo').textContent = String(player.ammo);
   $('boom').hidden = !(player.dead > 0); if (player.dead > 0) $('boomt').textContent = (player.hitBy ? 'Hit by ' + player.hitBy + '. ' : '') + 'Back in ' + Math.ceil(player.dead);
-  $('warn').hidden = !(lostT > 0 && state === 'race'); $('warnt').textContent = lostWhy;
+  $('warn').hidden = !(lostT > 0 && state === 'race'); $('warnt').textContent = lostWhy; $('warnsub').textContent = lostWhy === 'WRONG WAY' ? 'Turn around: back to your last checkpoint' : 'Heading back to the track';
   drawMap();
 }
 let last = performance.now();
