@@ -35,7 +35,7 @@ globalThis.AudioContext = class { constructor() { audioLog.ctx++; this.state = '
 let raf = null; globalThis.requestAnimationFrame = (f) => { raf = f; };
 
 let src = fs.readFileSync(process.argv[2], 'utf8');
-src = src.replace('requestAnimationFrame(frame);\n})();', 'globalThis.__dbg = { racers, player, get N() { return N; }, get HALF() { return HALF; }, get state() { return state; }, get pts() { return pts; }, get tan() { return tan; }, get nrm() { return nrm; }, get pads() { return pads; }, get raceT() { return raceT; }, selectCourse, COURSES, step, VERSION, get LAPS() { return LAPS; }, get trackLen() { return trackLen; }, get lostT() { return lostT; }, get lostWhy() { return lostWhy; }, get obstacles() { return obstacles; }, get rockets() { return rockets; }, get parts() { return parts; }, get chaosOn() { return chaosOn; }, set chaosOn(v) { chaosOn = v; }, set chaosSeed(v) { chaosSeed = v; }, get shake() { return shake; }, buildObstacles, clearChaos, fireRocket, spawnRocket, startRace, hitObstacles, respawnAfterBlast, botInput, respawnKey, get camH() { return camH; }, ROCKETS, ROCKET_SPEED, BLAST_SECS, SAFE_SECS, ROCKET_OFF_SECS, headingOf, get chaosGroup() { return chaosGroup; }, get pickups() { return pickups; }, collectPickups, MAX_CARRY, PICKUPS_PER_LAP, destroyWreck, get camera() { return camera; }, get outbox() { return outbox; }, get ammoText() { return els.ammo; }, bump, get gateObjs() { return gateObjs; }, get rec() { return rec; }, loadRec, setShape, SKILLS, BOT_POOL, gateIdx, restartRace, crossTime, get gateOf() { return player.gate; }, pickNames, assignBotSkills, baseLane, lateral };\nrequestAnimationFrame(frame);\n})();');
+src = src.replace('requestAnimationFrame(frame);\n})();', 'globalThis.__dbg = { racers, player, get N() { return N; }, get HALF() { return HALF; }, get state() { return state; }, get pts() { return pts; }, get tan() { return tan; }, get nrm() { return nrm; }, get pads() { return pads; }, get raceT() { return raceT; }, selectCourse, COURSES, step, VERSION, get LAPS() { return LAPS; }, get trackLen() { return trackLen; }, get lostT() { return lostT; }, get lostWhy() { return lostWhy; }, get obstacles() { return obstacles; }, get rockets() { return rockets; }, get parts() { return parts; }, get chaosOn() { return chaosOn; }, set chaosOn(v) { chaosOn = v; }, set chaosSeed(v) { chaosSeed = v; }, get shake() { return shake; }, buildObstacles, clearChaos, fireRocket, spawnRocket, startRace, hitObstacles, respawnAfterBlast, botInput, respawnKey, get camH() { return camH; }, ROCKETS, ROCKET_SPEED, BLAST_SECS, SAFE_SECS, ROCKET_OFF_SECS, headingOf, get chaosGroup() { return chaosGroup; }, get pickups() { return pickups; }, collectPickups, MAX_CARRY, PICKUPS_PER_LAP, destroyWreck, get camera() { return camera; }, get outbox() { return outbox; }, get ammoText() { return els.ammo; }, bump, get gateObjs() { return gateObjs; }, get rec() { return rec; }, tyreCheck, set tyreRand(v) { tyreRand = v; }, blowUp, loadRec, setShape, SKILLS, BOT_POOL, gateIdx, restartRace, crossTime, get gateOf() { return player.gate; }, pickNames, assignBotSkills, baseLane, lateral };\nrequestAnimationFrame(frame);\n})();');
 src = src.replace('const readInput = () => ({', 'const readInput = () => globalThis.__inp ? globalThis.__inp() : ({');
 new Function(src)();
 globalThis.__store = {}; globalThis.localStorage = { getItem: (k) => (k in __store ? __store[k] : null), setItem: (k, v) => { __store[k] = String(v); }, removeItem: (k) => { delete __store[k]; } };
@@ -143,5 +143,23 @@ console.log('--- checkpoint gates, bumping, records');
   check(stored && Math.abs(stored.lap - D.rec.lap) < 1e-6, 'and saved in the browser under the course name');
   const keep = D.rec.lap; D.startRace(); check(Math.abs(D.loadRec(false).lap - keep) < 1e-6 && els.best.textContent !== '--', `next race starts with the record on the HUD (${els.best.textContent})`);
   els.tomenu.h.click(); tick(3); D.selectCourse('harbour'); tick(2); check(D.loadRec(false).lap === 0, 'a different course has its own (empty) record'); D.selectCourse('kerb'); tick(2);
+}
+console.log('--- tyre wear');
+{ begin(); tick(60); const off = () => { const i = P.idx, n = D.nrm[i], p = D.pts[i]; Object.assign(P, { x: p.x + n.x * (D.HALF + 4), z: p.z + n.z * (D.HALF + 4), speed: 30 }); };
+  check(P.tyre === 100 && els.tyres.textContent === '0%', 'a race starts on 100% tyres (0% damage)');
+  let msgs = []; const tyreRandKeep = Math.random; D.tyreRand = () => 1; // no bursts yet
+  for (let f = 0; f < 60 * 2; f++) { off(); P.dist = D.HALF + 4; D.tyreCheck(P, 1 / 60); if (f % 20 === 0) { tick(1); msgs.push(els.tiret.textContent + (els.tire.hidden ? ' (hidden)' : '')); } }
+  check(P.tyre < 100 && P.tyre > 70 && msgs.some((m) => /TIRE DAMAGE \d+%$/.test(m)), `leaving the road wears tyres (${P.tyre.toFixed(1)}% left after 2 s) and shows: ${msgs.slice(-2).join(' | ')}`);
+  const on = P.tyre; P.dist = 0; for (let f = 0; f < 60; f++) D.tyreCheck(P, 1 / 60); check(P.tyre === on, 'driving on the road does not wear them');
+  let last = ''; for (let f = 0; f < 60 * 12; f++) { P.dist = D.HALF + 4; P.speed = 30; D.tyreCheck(P, 1 / 60); if (f % 30 === 0) { tick(1); P.dist = D.HALF + 4; } }
+  check(P.tyre <= 10 && P.dead === 0, `worn down to ${P.tyre.toFixed(1)}%: not exploded while the dice say no`);
+  tick(1); check(els.tiret.textContent === 'TIRE DAMAGE ' + Math.round(100 - P.tyre) + '%' && els.tire.hidden === false, 'banner shows the high damage: ' + els.tiret.textContent);
+  D.tyreRand = () => 0; P.speed = 30; D.tyreCheck(P, 1 / 60); check(P.dead > 2.5 && P.tyreBlow === true, `at 10% or less a burst explodes the car (out for ${P.dead.toFixed(1)} s)`);
+  tick(2); check(els.boom.hidden === false && /Tyre burst/.test(els.boomt.textContent), 'on-screen message: ' + els.boomt.textContent);
+  tick(60 * 3); check(P.dead === 0 && P.tyre === 100, `respawned on the road with fresh tyres (${P.tyre}%)`);
+  // bots wear too, and a healthy kart never bursts
+  const b = D.racers[1]; b.tyre = 50; b.speed = 30; D.tyreRand = () => 0; D.tyreCheck(b, 1); check(b.dead === 0, 'a kart with 50% tyres never bursts');
+  Object.assign(b, { tyre: 4, speed: 30, dist: 0, safe: 0 }); D.tyreCheck(b, 1 / 60); check(b.dead > 0, 'a bot with worn tyres can burst too');
+  D.tyreRand = Math.random;
 }
 console.log(ok ? '\nRESULT: PASS' : '\nRESULT: FAIL');

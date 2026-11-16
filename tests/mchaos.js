@@ -7,7 +7,7 @@ new Function(fs.readFileSync('./node_modules/three/examples/js/loaders/GLTFLoade
 THREE.WebGLRenderer = class { setPixelRatio() {} setSize() {} render() {} };
 
 let src = fs.readFileSync(process.argv[2], 'utf8');
-src = src.replace('requestAnimationFrame(frame);\n})();', 'window.__dbg = { racers, player, online, COLORS, ranking, leaveRoom, get state() { return state; }, get loadedCourse() { return loadedCourse; }, get N() { return N; }, get pts() { return pts; }, get raceT() { return raceT; }, get obstacles() { return obstacles; }, get rockets() { return rockets; }, get chaosOn() { return chaosOn; }, fireRocket, get parts() { return parts; }, get pickups() { return pickups; }, get chaosGroup() { return chaosGroup; }, get LAPS() { return LAPS; }, headingOf, get tan() { return tan; }, get nrm() { return nrm; }, get HALF() { return HALF; }, get trackLen() { return trackLen; }, ROCKETS };\nrequestAnimationFrame(frame);\n})();');
+src = src.replace('requestAnimationFrame(frame);\n})();', 'window.__dbg = { racers, player, blowUp, online, COLORS, ranking, leaveRoom, get state() { return state; }, get loadedCourse() { return loadedCourse; }, get N() { return N; }, get pts() { return pts; }, get raceT() { return raceT; }, get obstacles() { return obstacles; }, get rockets() { return rockets; }, get chaosOn() { return chaosOn; }, fireRocket, get parts() { return parts; }, get pickups() { return pickups; }, get chaosGroup() { return chaosGroup; }, get LAPS() { return LAPS; }, headingOf, get tan() { return tan; }, get nrm() { return nrm; }, get HALF() { return HALF; }, get trackLen() { return trackLen; }, ROCKETS };\nrequestAnimationFrame(frame);\n})();');
 src = src.replace('const readInput = () => ({', 'const readInput = () => window.__inp ? window.__inp() : ({');
 const GAME = new Function('window', 'document', 'THREE', 'requestAnimationFrame', src);
 
@@ -169,6 +169,10 @@ const sigOf = (I) => I.D.obstacles.map((o) => o.x.toFixed(1) + ',' + o.z.toFixed
   await runUntil(() => C.D.player.dead === 0, 60 * 5, 'Cara respawns');
   await runUntil(() => caraOnA.dead <= 0 && caraOnB.dead <= 0, 60 * 2, 'copies reappear');
   check('after 3 s Cara is back and visible on every screen', caraOnA.mesh.visible && caraOnB.mesh.visible && C.D.player.safe > 0);
+  C.D.player.safe = 0; C.D.blowUp(C.D.player, null); // a tyre burst: no rocket involved
+  await runUntil(() => caraOnA.dead > 0 && caraOnB.dead > 0, 120, 'tyre burst reaches others');
+  check('a tyre burst on Cara\'s browser explodes her kart on Alice\'s and Bob\'s screens too', caraOnA.dead > 0 && caraOnB.dead > 0 && C.D.player.dead > 2.5);
+  await runUntil(() => C.D.player.dead === 0 && caraOnA.dead <= 0 && caraOnB.dead <= 0, 60 * 5, 'burst respawn');
 
   // ---- ammo limit and sync of the counter
   B.D.fireRocket(B.D.player); B.D.fireRocket(B.D.player); const fourth = B.D.fireRocket(B.D.player);

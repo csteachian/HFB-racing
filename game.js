@@ -2,7 +2,7 @@
 'use strict';
 const T = THREE;
 let LAPS = 3; // per course: a course can set `laps`
-const VERSION = '2026.11.16-c'; // shown on the menu and compared between players in an online lobby
+const VERSION = '2026.11.16-d'; // shown on the menu and compared between players in an online lobby
 const FAR = 18; // metres beyond the road edge where the player counts as off course (and crawls)
 const GRASS_MAX = 6; // seconds of continuous grass before the player counts as off course
 const GATES = 14; // checkpoints around the lap; gate 0 is the start line
@@ -357,7 +357,7 @@ function resetRacers() {
   racers.forEach((r, k) => {
     const slot = (online.on && r.e !== undefined) ? r.e : SLOT[k], row = slot >> 1, i = N - GRID_STEP * (row + 1), s = slot % 2 ? side : -side;
     r.x = pts[i].x + nrm[i].x * s; r.z = pts[i].z + nrm[i].z * s; r.y = pts[i].y; r.h = headingOf(tan[i]);
-    Object.assign(r, { yaw: 0, ammo: ROCKETS, shots: 0, dead: 0, safe: 0, hitBy: '', fireCd: 4 + ((k * 7) % 5), laneNow: undefined, vy: 0, gate: GATES - 1, speed: 0, steer: 0, boost: 0, drift: 0, idx: i, dist: Math.abs(s), laps: -1, finished: false, finishT: 0, cc: r.base, drifting: false, gone: false, srcA: null, tAt: undefined });
+    Object.assign(r, { tyre: 100, tyreBlow: false, yaw: 0, ammo: ROCKETS, shots: 0, dead: 0, safe: 0, hitBy: '', fireCd: 4 + ((k * 7) % 5), laneNow: undefined, vy: 0, gate: GATES - 1, speed: 0, steer: 0, boost: 0, drift: 0, idx: i, dist: Math.abs(s), laps: -1, finished: false, finishT: 0, cc: r.base, drifting: false, gone: false, srcA: null, tAt: undefined });
   });
 }
 function locate(r) {
@@ -598,7 +598,7 @@ function startRace(keep) { // keep: a restart of the same race, so the opponents
   setShape(player, myCar);
   resetRacers(); if (chaosOn) buildObstacles(chaosSeed); else clearChaos();
   if (online.on) markSeen(); else { outbox = {}; botFireLog = []; botBlastLog = []; botTakeLog = []; botEvDirty = false; }
-  fireHeld = false; shake = 0; $('ammochip').hidden = !chaosOn; $('firebtn').hidden = !chaosOn; $('fire').hidden = !chaosOn;
+  tyreShowT = 0; fireHeld = false; shake = 0; $('ammochip').hidden = !chaosOn; $('firebtn').hidden = !chaosOn; $('fire').hidden = !chaosOn;
   lostT = 0; missed = false; grassT = 0; raceT = 0; lapStart = 0; endTimer = 0;
   rec = loadRec(chaosOn); recNew = { lap: false, race: false }; best = rec.lap || Infinity; $('best').textContent = rec.lap ? fmt(rec.lap) : '--';
   camH = player.h; cd = 3; state = 'count';
@@ -1314,13 +1314,23 @@ function updateRockets(dt) {
 }
 
 /* destroyed cars */
+// Tyres: every kart starts a race on 100%. Time spent off the road wears them down (faster at speed). At 10% or less each second
+// carries a risk that a tyre bursts and the kart explodes like a rocket hit; new tyres are fitted when it respawns.
+const TYRE_WEAR = 9, TYRE_RISK_AT = 10;
+function tyreCheck(r, dt) {
+  if (r.finished || r.dead > 0 || r.safe > 0 || r.tyre === undefined) return;
+  if (r.dist > HALF + 1.2 && Math.abs(r.speed) > 3) r.tyre = Math.max(0, r.tyre - TYRE_WEAR * Math.min(1, Math.abs(r.speed) / 30) * dt);
+  if (r.tyre <= TYRE_RISK_AT && Math.abs(r.speed) > 8 && tyreRand() < (0.12 + (TYRE_RISK_AT - r.tyre) / TYRE_RISK_AT * 0.3) * dt) blowUp(r, null);
+}
+let tyreRand = Math.random, tyreShowT = 0;
 function blowUp(r, rk) {
   explosionFx(r.x, r.y + 0.8, r.z, true);
   r.dead = BLAST_SECS; r.speed = 0; r.boost = 0; r.drift = 0; r.drifting = false; r.steer = 0;
-  r.hitBy = rk && rk.owner ? rk.owner.name : '';
-  if (online.on && rk) {
-    if (r === player) outbox.x = [uid(), rk.id, f2(r.x), f2(r.z), f2(r.y)];
-    else if (r.kind === 'bot' && isHost()) { botBlastLog.push([uid(), r.botIdx, rk.id, f2(r.x), f2(r.z), f2(r.y)]); if (botBlastLog.length > 6) botBlastLog.shift(); botEvDirty = true; }
+  r.hitBy = rk && rk.owner ? rk.owner.name : ''; r.tyreBlow = !rk;
+  if (online.on) {
+    const id = rk ? rk.id : 0;
+    if (r === player) outbox.x = [uid(), id, f2(r.x), f2(r.z), f2(r.y)];
+    else if (r.kind === 'bot' && isHost()) { botBlastLog.push([uid(), r.botIdx, id, f2(r.x), f2(r.z), f2(r.y)]); if (botBlastLog.length > 6) botBlastLog.shift(); botEvDirty = true; }
   }
 }
 function remoteBlast(r, rocketId, x, z, y) { // a player (or a bot on the host) says it was hit
@@ -1336,6 +1346,7 @@ function respawnAfterBlast(r) { // back on the road centre close to where it ble
   }
   const p = pts[i];
   Object.assign(r, { x: p.x, z: p.z, y: p.y, vy: 0, h: headingOf(tan[i]), speed: 10, steer: 0, boost: 0, drift: 0, dist: 0, idx: i, drifting: false, safe: SAFE_SECS, dead: 0 });
+  if (r.tyreBlow) { r.tyre = 100; r.tyreBlow = false; } // fresh tyres after a blowout
   if (r === player) { camH = r.h; lostT = 0; missed = false; grassT = 0; }
 }
 
@@ -1377,8 +1388,7 @@ function updateChaos(dt) {
     p.m.scale.setScalar(Math.max(0.01, s));
   }
 }
-function pollChaos() { // rockets and hits reported by other players
-  if (!chaosOn) return;
+function pollChaos() { // rockets and hits (and tyre blowouts) reported by other players
   for (const r of racers) {
     if (r.kind !== 'remote' || !r.label) continue;
     const p = online.byLabel.get(r.label); if (!p) continue;
@@ -1439,6 +1449,7 @@ function update(dt) {
       if (r.safe > 0) r.safe -= dt;
       if (r.kind === 'remote') { smoothRemote(r, dt); continue; }
       step(r, r.kind === 'bot' ? botInput(r, dt) : inp, dt);
+      tyreCheck(r, dt);
       if (chaosOn) { hitObstacles(r); collectPickups(r); if (r.kind === 'bot') botFire(r, dt); }
     }
     for (let i = 0; i < racers.length; i++) for (let j = i + 1; j < racers.length; j++) {
@@ -1460,6 +1471,7 @@ function update(dt) {
     }
   } else if (online.on) { for (const r of racers) if (r.kind === 'remote') smoothRemote(r, dt); }
   updateGates();
+  if (state === 'race' && player.dist > HALF + 1.2 && player.dead <= 0) tyreShowT = 2.5; else tyreShowT = Math.max(0, tyreShowT - dt);
   for (const r of racers) {
     if (r.kind !== 'remote') { // follow the road, slide down the embankment, and fall off a ledge instead of hovering
       const out = r.dist - (HALF + 1.4), road = pts[r.idx].y, ground = out <= 0 ? road : Math.max(0, road - out / bankRun);
@@ -1510,7 +1522,11 @@ function updateHud() {
   const bar = $('driftbar'); bar.style.width = `${clamp(player.drift / 1.8, 0, 1) * 100}%`; bar.className = player.drift > 0.9 ? 'ready' : '';
   $('flag').hidden = !(player.boost > 0);
   $('ammochip').hidden = !chaosOn; if (chaosOn) $('ammo').textContent = String(player.ammo);
-  $('boom').hidden = !(player.dead > 0); if (player.dead > 0) $('boomt').textContent = (player.hitBy ? 'Hit by ' + player.hitBy + '. ' : '') + 'Back in ' + Math.ceil(player.dead);
+  $('boom').hidden = !(player.dead > 0); if (player.dead > 0) $('boomt').textContent = (player.hitBy ? 'Hit by ' + player.hitBy + '. ' : player.tyreBlow ? 'Tyre burst. ' : '') + 'Back in ' + Math.ceil(player.dead);
+  const dmg = Math.round(100 - player.tyre); $('tyres').textContent = dmg + '%';
+  const tireOn = state === 'race' && player.dead <= 0 && !player.finished && (tyreShowT > 0 || dmg >= 90);
+  $('tire').hidden = !tireOn;
+  if (tireOn) { $('tiret').textContent = 'TIRE DAMAGE ' + dmg + '%'; $('tiret').style.color = dmg >= 90 ? '#ff4b3a' : dmg >= 60 ? '#ffb627' : ''; $('tires').textContent = dmg >= 90 ? 'Burst risk! Get back on the road' : 'Stay on the road to save your tyres'; }
   $('warn').hidden = !(lostT > 0 && state === 'race'); $('warnt').textContent = lostWhy; $('warnsub').textContent = lostWhy === 'WRONG WAY' ? 'Turn around: back to your last checkpoint' : 'Heading back to the track';
   drawMap();
 }
