@@ -2,7 +2,7 @@
 'use strict';
 const T = THREE;
 let LAPS = 3; // per course: a course can set `laps`
-const VERSION = '2026.11.16-b'; // shown on the menu and compared between players in an online lobby
+const VERSION = '2026.11.16-c'; // shown on the menu and compared between players in an online lobby
 const FAR = 18; // metres beyond the road edge where the player counts as off course (and crawls)
 const GRASS_MAX = 6; // seconds of continuous grass before the player counts as off course
 const GATES = 14; // checkpoints around the lap; gate 0 is the start line
@@ -215,7 +215,29 @@ function addScenery(c) {
     }
   });
 }
-function buildCourse(c) {
+function buildCourse(c) { buildCourseBase(c); buildGates(); }
+let gateObjs = [], gateShown = -99;
+const gateNeon = new T.Color(0x33e6ff), gateNext = new T.Color(0x7dff4f);
+function buildGates() { // a neon line across the road with a flag on each side at every checkpoint; the next one you need glows green
+  gateObjs = []; gateShown = -99;
+  const poleG = new T.CylinderGeometry(0.1, 0.1, 5, 6), flagG = new T.BoxGeometry(1.9, 1.1, 0.06), lineG = new T.BoxGeometry(HALF * 2, 0.05, 0.5);
+  const poleM = new T.MeshLambertMaterial({ color: 0xe8ecf2 });
+  for (let k = 1; k < GATES; k++) {
+    const i = gateIdx(k), g = new T.Group(), mat = new T.MeshBasicMaterial({ color: gateNeon, transparent: true, opacity: 0.5, depthWrite: false });
+    g.position.set(pts[i].x, pts[i].y, pts[i].z); g.rotation.y = headingOf(tan[i]);
+    const line = new T.Mesh(lineG, mat); line.position.y = 0.13; g.add(line);
+    for (const sd of [-1, 1]) {
+      const ex = sd * (HALF + 1.9), pole = new T.Mesh(poleG, poleM); pole.position.set(ex, 2.3, 0); g.add(pole);
+      const flag = new T.Mesh(flagG, mat); flag.position.set(ex - sd * 1.05, 4.3, 0); g.add(flag);
+    }
+    group.add(g); gateObjs[k] = { mat };
+  }
+}
+function updateGates() {
+  const nx = (player.gate + 1) % GATES; if (nx === gateShown) return; gateShown = nx;
+  gateObjs.forEach((o, k) => { if (!o) return; const on = k === nx; o.mat.color.copy(on ? gateNext : gateNeon); o.mat.opacity = on ? 0.9 : 0.5; });
+}
+function buildCourseBase(c) {
   bankRun = 1.2;
   if (c.gltf) { buildImported(c.gltf, c); return; }
   const sc = c.scale || 1; loadedCourse = c.id; LAPS = c.laps || 3;
@@ -335,7 +357,7 @@ function resetRacers() {
   racers.forEach((r, k) => {
     const slot = (online.on && r.e !== undefined) ? r.e : SLOT[k], row = slot >> 1, i = N - GRID_STEP * (row + 1), s = slot % 2 ? side : -side;
     r.x = pts[i].x + nrm[i].x * s; r.z = pts[i].z + nrm[i].z * s; r.y = pts[i].y; r.h = headingOf(tan[i]);
-    Object.assign(r, { ammo: ROCKETS, shots: 0, dead: 0, safe: 0, hitBy: '', fireCd: 4 + ((k * 7) % 5), laneNow: undefined, vy: 0, gate: GATES - 1, speed: 0, steer: 0, boost: 0, drift: 0, idx: i, dist: Math.abs(s), laps: -1, finished: false, finishT: 0, cc: r.base, drifting: false, gone: false, srcA: null, tAt: undefined });
+    Object.assign(r, { yaw: 0, ammo: ROCKETS, shots: 0, dead: 0, safe: 0, hitBy: '', fireCd: 4 + ((k * 7) % 5), laneNow: undefined, vy: 0, gate: GATES - 1, speed: 0, steer: 0, boost: 0, drift: 0, idx: i, dist: Math.abs(s), laps: -1, finished: false, finishT: 0, cc: r.base, drifting: false, gone: false, srcA: null, tAt: undefined });
   });
 }
 function locate(r) {
@@ -384,10 +406,30 @@ function step(r, inp, dt) {
   const drifting = inp.drift && r.speed > 16 && Math.abs(r.steer) > 0.25;
   const rate = (drifting ? 2.8 : 2.0) * (1 - 0.35 * Math.min(1, Math.abs(r.speed) / 45));
   r.h += r.steer * rate * Math.min(1, Math.abs(r.speed) / 10) * (r.speed < 0 ? -1 : 1) * dt;
+  if (r.yaw) { r.h += r.yaw * dt; r.yaw *= Math.exp(-3.5 * dt); if (Math.abs(r.yaw) < 0.02) r.yaw = 0; } // wobble after a knock
   if (drifting) r.drift += dt;
   else { if (r.drift > 0.9) r.boost = Math.max(r.boost, r.drift > 1.8 ? 1.3 : 0.8); r.drift = 0; }
   r.x += Math.sin(r.h) * r.speed * dt; r.z += Math.cos(r.h) * r.speed * dt;
   r.drifting = drifting;
+}
+// Two karts touching: they trade momentum along the line between them (equal weight, bouncy), so a car that rams another
+// from behind loses speed while the one in front gains it, and a glancing hit turns each kart and sets it wobbling.
+function bump(a, b, nx, nz, fa, fb) {
+  const sa = Math.sin(a.h), ca = Math.cos(a.h), sb = Math.sin(b.h), cb = Math.cos(b.h);
+  const vax = sa * a.speed, vaz = ca * a.speed, vbx = sb * b.speed, vbz = cb * b.speed;
+  const closing = (vax - vbx) * nx + (vaz - vbz) * nz; // m/s the two karts are moving together
+  if (closing <= 0.6) { if (fa) a.speed *= 0.995; if (fb) b.speed *= 0.995; return; } // already parting, or just rubbing
+  const j = 0.78 * closing;
+  const apply = (r, wx, wz, px, pz, local) => { // the other kart is at (px, pz) from r
+    if (!local) return;
+    const fx = Math.sin(r.h), fz = Math.cos(r.h), rx = fz, rz = -fx;
+    const fwd = wx * fx + wz * fz, lat = wx * rx + wz * rz, dh = clamp(Math.atan2(lat, Math.max(6, Math.abs(fwd))), -0.7, 0.7);
+    r.h += dh; r.speed = clamp((wx * Math.sin(r.h) + wz * Math.cos(r.h)) * 0.97, -10, 70);
+    const side = px * rx + pz * rz; // + : hit on my right, so I am pushed round to the left
+    r.yaw = clamp((r.yaw || 0) - side * closing * 0.09, -2.2, 2.2); r.steer *= 0.5;
+  };
+  apply(a, vax - nx * j, vaz - nz * j, nx, nz, fa); apply(b, vbx + nx * j, vbz + nz * j, -nx, -nz, fb);
+  if ((a === player || b === player) && closing > 3) shake = Math.max(shake, Math.min(0.35, closing / 50));
 }
 /* ---------- bot names and skill levels ---------- */
 const BOT_POOL = ['Pixel', 'Dash', 'Murray', 'Nova', 'Rook', 'Turbo', 'Blaze', 'Ziggy', 'Comet', 'Echo', 'Sparky', 'Mango', 'Jinx', 'Ranger', 'Vortex', 'Gizmo', 'Bolt', 'Tango', 'Zephyr', 'Maverick',
@@ -473,11 +515,27 @@ const readInput = () => ({
 /* ---------- race flow ---------- */
 let state = 'menu', cd = 0, goT = 0, raceT = 0, lapStart = 0, best = Infinity, camH = 0, orbit = 0, endTimer = 0;
 const fmt = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(2).padStart(5, '0')}`;
+// Personal records, kept in this browser for each course (and separately for Chaos), so you can race your own best time.
+const recKey = (chaos) => 'hfbracing-rec:' + loadedCourse + ':' + Math.round(trackLen) + (chaos ? ':c' : '');
+function loadRec(chaos) { try { const o = JSON.parse(localStorage.getItem(recKey(chaos))); if (o && o.lap > 0) return { lap: +o.lap, race: +o.race > 0 ? +o.race : 0 }; } catch (e) { /* none saved, or storage unavailable */ } return { lap: 0, race: 0 }; }
+function saveRec() { try { localStorage.setItem(recKey(chaosOn), JSON.stringify(rec)); } catch (e) { /* storage can be unavailable */ } }
+let rec = { lap: 0, race: 0 }, recNew = { lap: false, race: false };
 function lapCrossed() {
   if (player.laps === 0) { lapStart = raceT; return; }
-  if (player.laps > 0) { best = Math.min(best, raceT - lapStart); lapStart = raceT; $('best').textContent = fmt(best); if (player.laps < LAPS) playChime(); }
+  if (player.laps > 0) {
+    const lap = raceT - lapStart; lapStart = raceT; best = Math.min(best, lap);
+    if (!rec.lap || lap < rec.lap) { const had = rec.lap > 0; rec.lap = lap; recNew.lap = true; saveRec(); if (had) toast('New best lap: ' + fmt(lap), 2600); }
+    $('best').textContent = fmt(best); if (player.laps < LAPS) playChime();
+  }
 }
-function playerFinished() { endTimer = 1.4; }
+function playerFinished() {
+  endTimer = 1.4; const t = player.finishT;
+  if (t > 0 && (!rec.race || t < rec.race)) { rec.race = t; recNew.race = true; saveRec(); }
+}
+function recLine() {
+  const bits = []; if (rec.lap) bits.push('best lap ' + fmt(rec.lap) + (recNew.lap ? ' (new!)' : '')); if (rec.race) bits.push('best race ' + fmt(rec.race) + (recNew.race ? ' (new!)' : ''));
+  return bits.length ? 'Your record on this course: ' + bits.join(' \u00b7 ') : '';
+}
 function renderBoard() {
   const board = $('board'); board.textContent = '';
   ranking().forEach((r, i) => {
@@ -494,14 +552,14 @@ function resultButtons() {
   $('tomenu').textContent = on ? 'Leave room' : 'Change course';
 }
 function showResults() {
-  renderBoard(); resultButtons(); boardT = 0.5;
+  renderBoard(); resultButtons(); boardT = 0.5; $('recline').textContent = recLine();
   $('hud').hidden = true; $('results').hidden = false; state = 'done';
 }
 let lostT = 0, missed = false, grassT = 0, lostWhy = 'MISSED CHECKPOINT'; // lostT: seconds the player has been off course or past a missed checkpoint
 const gateIdx = (k) => Math.round((k * N) / GATES) % N;
 function respawnAtGate(p) { // back to the last checkpoint really passed, facing along the road, at a gentle speed
   const g = gateIdx(p.gate);
-  Object.assign(p, { x: pts[g].x, z: pts[g].z, y: pts[g].y, vy: 0, h: headingOf(tan[g]), speed: 10, steer: 0, boost: 0, drift: 0, dist: 0, idx: g, drifting: false });
+  Object.assign(p, { yaw: 0, x: pts[g].x, z: pts[g].z, y: pts[g].y, vy: 0, h: headingOf(tan[g]), speed: 10, steer: 0, boost: 0, drift: 0, dist: 0, idx: g, drifting: false });
   camH = p.h; lostT = 0; missed = false; grassT = 0;
 }
 function respawnAfterWrong(p) { respawnAtGate(p); }
@@ -541,7 +599,8 @@ function startRace(keep) { // keep: a restart of the same race, so the opponents
   resetRacers(); if (chaosOn) buildObstacles(chaosSeed); else clearChaos();
   if (online.on) markSeen(); else { outbox = {}; botFireLog = []; botBlastLog = []; botTakeLog = []; botEvDirty = false; }
   fireHeld = false; shake = 0; $('ammochip').hidden = !chaosOn; $('firebtn').hidden = !chaosOn; $('fire').hidden = !chaosOn;
-  lostT = 0; missed = false; grassT = 0; raceT = 0; lapStart = 0; best = Infinity; endTimer = 0; $('best').textContent = '--';
+  lostT = 0; missed = false; grassT = 0; raceT = 0; lapStart = 0; endTimer = 0;
+  rec = loadRec(chaosOn); recNew = { lap: false, race: false }; best = rec.lap || Infinity; $('best').textContent = rec.lap ? fmt(rec.lap) : '--';
   camH = player.h; cd = 3; state = 'count';
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // so the keys drive the kart, not a focused menu control
   $('menu').hidden = true; $('results').hidden = true; $('lobby').hidden = true; $('join').hidden = true; $('hud').hidden = false;
@@ -573,6 +632,7 @@ function describe() {
   const m = $('coursemsg'); m.style.color = '';
   const tail = `${(trackLen / 1000).toFixed(2)} km, ${Math.round(HALF * 2)} m wide.`;
   m.textContent = current === 'imported' ? `${imported.info}. ${tail}` : `${COURSES.find((c) => c.id === current).blurb} ${tail}`;
+  const sv = loadRec(false); if (sv.lap && current === loadedCourse) m.textContent += ` Your best: lap ${fmt(sv.lap)}${sv.race ? ', race ' + fmt(sv.race) : ''}.`;
 }
 function fillSelect(sel, withImported) {
   const groups = [['Built-in', COURSES.filter((c) => !c.gltf)], ['From the courses folder', COURSES.filter((c) => c.gltf)]];
@@ -592,7 +652,7 @@ function loadImported(data, done) {
   if (!THREE.GLTFLoader) { fail('The track loader did not load. Check your connection and reload.'); return; }
   try {
     new THREE.GLTFLoader().parse(data, '', (gltf) => {
-      try { done(buildImported(gltf)); } catch (err) { fail(err.message); }
+      try { const info = buildImported(gltf); buildGates(); done(info); } catch (err) { fail(err.message); }
     }, () => fail(UNREADABLE));
   } catch (err) { fail(UNREADABLE); }
 }
@@ -1388,8 +1448,7 @@ function update(dt) {
       if (d < 2.4 && d > 0.001) {
         const fa = a.kind === 'remote' ? 0 : 1, fb = b.kind === 'remote' ? 0 : 1, push = (2.4 - d) / (fa + fb), nx = dx / d, nz = dz / d;
         a.x -= nx * push * fa; a.z -= nz * push * fa; b.x += nx * push * fb; b.z += nz * push * fb;
-        if (fa) a.speed *= 0.99;
-        if (fb) b.speed *= 0.99;
+        bump(a, b, nx, nz, fa, fb);
       }
     }
     for (const r of racers) {
@@ -1400,6 +1459,7 @@ function update(dt) {
       if (r === player && state === 'race') checkLost(dt);
     }
   } else if (online.on) { for (const r of racers) if (r.kind === 'remote') smoothRemote(r, dt); }
+  updateGates();
   for (const r of racers) {
     if (r.kind !== 'remote') { // follow the road, slide down the embankment, and fall off a ledge instead of hovering
       const out = r.dist - (HALF + 1.4), road = pts[r.idx].y, ground = out <= 0 ? road : Math.max(0, road - out / bankRun);

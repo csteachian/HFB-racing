@@ -50,6 +50,9 @@ Engine sounds for every kart (they rise with speed and fade with distance), a be
 - **Wrong way:** drive back through a checkpoint you have already passed and WRONG WAY appears; after about a second you are put back on the last checkpoint, facing the right way.
 - **Restart:** press **Backspace** (or the Restart button) to go back to the grid and start the race again. Online, only the host can restart, by pressing it twice, so nobody's race is lost to an accidental press.
 - **Bot levels:** every race, each opponent is randomly dealt Easy, Medium or Hard (shown on the results board). Easy bots drive their own lane. Medium bots take the inside line through corners, aim for boost pads and sometimes move across to hold you off. Hard bots are faster, drift for boosts, and block firmly when you try to overtake. There are 52 opponent names, a different set each race.
+- **Checkpoints:** every checkpoint has a neon line across the road and a flag on each side; the next one you need glows green.
+- **Bumping:** karts bounce off each other. A rear-end ram slows the rammer and speeds up the car in front; a side swipe turns both karts and sets them wobbling; a head-on bounces both back.
+- **Records:** your best lap and best race time are saved in this browser for each course (Chaos separately) and shown as YOUR BEST on the HUD, on the menu and on the results screen. Clearing site data erases them.
 - **Cars:** five shapes (Classic, Wedge, Buggy, Pickup, Formula). Pick yours in the menu; it is remembered and shown to other players online. The five bots always have different shapes, dealt out each new race.
 - **Restart vs new race:** Backspace restarts the same race with the same opponents (names, cars, levels). Only a brand-new race (Race again, a new race from the menu) deals new ones.
 - **Finish line:** players and bots are timed at the moment the front of the kart crosses the line, so whoever is in front there finishes first.

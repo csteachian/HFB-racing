@@ -35,9 +35,10 @@ globalThis.AudioContext = class { constructor() { audioLog.ctx++; this.state = '
 let raf = null; globalThis.requestAnimationFrame = (f) => { raf = f; };
 
 let src = fs.readFileSync(process.argv[2], 'utf8');
-src = src.replace('requestAnimationFrame(frame);\n})();', 'globalThis.__dbg = { racers, player, get N() { return N; }, get HALF() { return HALF; }, get state() { return state; }, get pts() { return pts; }, get tan() { return tan; }, get nrm() { return nrm; }, get pads() { return pads; }, get raceT() { return raceT; }, selectCourse, COURSES, step, VERSION, get LAPS() { return LAPS; }, get trackLen() { return trackLen; }, get lostT() { return lostT; }, get lostWhy() { return lostWhy; }, get obstacles() { return obstacles; }, get rockets() { return rockets; }, get parts() { return parts; }, get chaosOn() { return chaosOn; }, set chaosOn(v) { chaosOn = v; }, set chaosSeed(v) { chaosSeed = v; }, get shake() { return shake; }, buildObstacles, clearChaos, fireRocket, spawnRocket, startRace, hitObstacles, respawnAfterBlast, botInput, respawnKey, get camH() { return camH; }, ROCKETS, ROCKET_SPEED, BLAST_SECS, SAFE_SECS, ROCKET_OFF_SECS, headingOf, get chaosGroup() { return chaosGroup; }, get pickups() { return pickups; }, collectPickups, MAX_CARRY, PICKUPS_PER_LAP, destroyWreck, get camera() { return camera; }, get outbox() { return outbox; }, get ammoText() { return els.ammo; }, setShape, SKILLS, BOT_POOL, gateIdx, restartRace, crossTime, get gateOf() { return player.gate; }, pickNames, assignBotSkills, baseLane, lateral };\nrequestAnimationFrame(frame);\n})();');
+src = src.replace('requestAnimationFrame(frame);\n})();', 'globalThis.__dbg = { racers, player, get N() { return N; }, get HALF() { return HALF; }, get state() { return state; }, get pts() { return pts; }, get tan() { return tan; }, get nrm() { return nrm; }, get pads() { return pads; }, get raceT() { return raceT; }, selectCourse, COURSES, step, VERSION, get LAPS() { return LAPS; }, get trackLen() { return trackLen; }, get lostT() { return lostT; }, get lostWhy() { return lostWhy; }, get obstacles() { return obstacles; }, get rockets() { return rockets; }, get parts() { return parts; }, get chaosOn() { return chaosOn; }, set chaosOn(v) { chaosOn = v; }, set chaosSeed(v) { chaosSeed = v; }, get shake() { return shake; }, buildObstacles, clearChaos, fireRocket, spawnRocket, startRace, hitObstacles, respawnAfterBlast, botInput, respawnKey, get camH() { return camH; }, ROCKETS, ROCKET_SPEED, BLAST_SECS, SAFE_SECS, ROCKET_OFF_SECS, headingOf, get chaosGroup() { return chaosGroup; }, get pickups() { return pickups; }, collectPickups, MAX_CARRY, PICKUPS_PER_LAP, destroyWreck, get camera() { return camera; }, get outbox() { return outbox; }, get ammoText() { return els.ammo; }, bump, get gateObjs() { return gateObjs; }, get rec() { return rec; }, loadRec, setShape, SKILLS, BOT_POOL, gateIdx, restartRace, crossTime, get gateOf() { return player.gate; }, pickNames, assignBotSkills, baseLane, lateral };\nrequestAnimationFrame(frame);\n})();');
 src = src.replace('const readInput = () => ({', 'const readInput = () => globalThis.__inp ? globalThis.__inp() : ({');
 new Function(src)();
+globalThis.__store = {}; globalThis.localStorage = { getItem: (k) => (k in __store ? __store[k] : null), setItem: (k, v) => { __store[k] = String(v); }, removeItem: (k) => { delete __store[k]; } };
 const D = globalThis.__dbg, P = D.player;
 let now = 0; const tick = (n) => { for (let i = 0; i < n; i++) { now += 1000 / 60; raf(now); } };
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -119,5 +120,28 @@ console.log('--- restart keeps opponents; new race changes them; cars');
   check(shapes.size === 5 && distinct, 'all five car shapes appear, the five bots always have different ones');
   els.carsel.blur = () => {}; els.carsel.value = '3'; (els.carsel.h.change || (() => {}))({}); check(P.shape === 3 && D.racers[0].body.children.length > 0, 'choosing a car in the menu changes the player\'s car');
   D.startRace(); check(P.shape === 3, 'and it stays chosen for the next race');
+}
+console.log('--- checkpoint gates, bumping, records');
+{ begin(); const g = D.gateObjs.filter(Boolean);
+  check(g.length === 13, `${g.length} checkpoint gates drawn (neon line + two flags each)`);
+  P.gate = 2; tick(2); const lit = g.filter((o) => o.mat.color.g > 0.9 && o.mat.color.r > 0.4).length; check(lit === 1, 'exactly one gate, the next, is lit green');
+  // rear-end ram: kart a behind b, a faster
+  const mk = (x, sp) => ({ x, z: 0, h: 0, speed: sp, steer: 0 }); // heading 0 = +z
+  { const a = { x: 0, z: 0, h: 0, speed: 35, steer: 0 }, b = { x: 0, z: 2.2, h: 0, speed: 20, steer: 0 }; D.bump(a, b, 0, 1, 1, 1);
+    check(a.speed < 35 - 8 && b.speed > 20 + 8 && Math.abs(a.h) < 1e-6 && Math.abs(b.h) < 1e-6, `rear-end ram: rammer 35 -> ${a.speed.toFixed(1)}, car in front 20 -> ${b.speed.toFixed(1)}, both keep straight`); }
+  { const a = { x: 0, z: 0, h: 0.3, speed: 30, steer: 0.5 }, b = { x: 1.4, z: 1.2, h: 0, speed: 30, steer: 0 }; const d = Math.hypot(1.4, 1.2); D.bump(a, b, 1.4 / d, 1.2 / d, 1, 1);
+    check(Math.abs(a.h - 0.3) > 0.02 && Math.abs(b.h) > 0.005 && Math.abs(a.yaw) > 0.05, `side swipe turns both karts (headings ${a.h.toFixed(2)}, ${b.h.toFixed(2)}) and wobbles the one that was hit`); }
+  { const a = { x: 0, z: 0, h: 0, speed: 30, steer: 0 }, b = { x: 0, z: 2.2, h: Math.PI, speed: 30, steer: 0 }; D.bump(a, b, 0, 1, 1, 1);
+    check(a.speed < 0 && b.speed < 0, `head-on: both bounce back (${a.speed.toFixed(1)}, ${b.speed.toFixed(1)})`); }
+  { const a = { x: 0, z: 0, h: 0, speed: 20, steer: 0 }, b = { x: 0, z: 2.2, h: 0, speed: 30, steer: 0 }; D.bump(a, b, 0, 1, 1, 1);
+    check(a.speed === 20 * 0.995 && b.speed === 30 * 0.995, 'a faster kart pulling away is not slowed by the one behind'); }
+  // records
+  begin(); try { localStorage.removeItem('x'); } catch (e) {}
+  const had0 = D.rec.lap; for (let k = 0; k <= 14; k++) { place(P, D.gateIdx(k % 14) + 1); P.speed = 25; tick(3); }
+  check(D.rec.lap > 0, `a completed lap is recorded (${D.rec.lap.toFixed(2)} s)`);
+  const stored = JSON.parse(localStorage.getItem(Object.keys(globalThis.__store || {}).find((k) => k.startsWith('hfbracing-rec:kerb')) || 'none') || 'null');
+  check(stored && Math.abs(stored.lap - D.rec.lap) < 1e-6, 'and saved in the browser under the course name');
+  const keep = D.rec.lap; D.startRace(); check(Math.abs(D.loadRec(false).lap - keep) < 1e-6 && els.best.textContent !== '--', `next race starts with the record on the HUD (${els.best.textContent})`);
+  els.tomenu.h.click(); tick(3); D.selectCourse('harbour'); tick(2); check(D.loadRec(false).lap === 0, 'a different course has its own (empty) record'); D.selectCourse('kerb'); tick(2);
 }
 console.log(ok ? '\nRESULT: PASS' : '\nRESULT: FAIL');
